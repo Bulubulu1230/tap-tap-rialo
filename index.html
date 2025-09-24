@@ -80,11 +80,23 @@
       }
 
       class ImageButton{
-        constructor(img,x,y){this.img=img;this.x=x;this.y=y;this.scale=1;this.w=img.naturalWidth;this.h=img.naturalHeight;}
-        draw(){const w=this.w*this.scale,h=this.h*this.scale;ctx.drawImage(this.img,this.x-w/2,this.y-h/2,w,h);}
-        hit(px,py){const w=this.w*this.scale,h=this.h*this.scale;return px>=this.x-w/2&&px<=this.x+w/2&&py>=this.y-h/2&&py<=this.y+h/2;}
-      }
-
+  constructor(img,x,y){
+    this.img=img; this.x=x; this.y=y;
+    this.w=img.naturalWidth; this.h=img.naturalHeight;
+    this.baseScale=1; this.scale=1; this.hover=false;
+  }
+  setScale(s){ this.baseScale=s; if(this.scale===1) this.scale=s; }
+  update(dt){
+    const target = this.hover ? this.baseScale*1.08 : this.baseScale;
+    const k = Math.min(1, dt*12);
+    this.scale += (target - this.scale)*k;
+  }
+  draw(){ const w=this.w*this.scale, h=this.h*this.scale;
+    ctx.drawImage(this.img,this.x-w/2,this.y-h/2,w,h); }
+  hit(px,py){ const w=this.w*this.scale, h=this.h*this.scale;
+    return px>=this.x-w/2 && px<=this.x+w/2 && py>=this.y-h/2 && py<=this.y+h/2; }
+}
+      
       class Falling{
         constructor(type,x,spd){
           this.type=type; this.x=x; this.y=-80; this.vy=spd; this.r=64; this.alive=true;
@@ -130,6 +142,24 @@
         const c = ev.touches? ev.touches[0] : ev;
         return { x:(c.clientX-r.left)*sx, y:(c.clientY-r.top)*sy };
       }
+
+      function setHoverState(p){
+  // reset dulu
+  if(startBtn) startBtn.hover=false;
+  if(tryBtn)   tryBtn.hover=false;
+  if(exitBtn)  exitBtn.hover=false;
+
+  if(state===STATES.COVER && startBtn){
+    startBtn.hover = startBtn.hit(p.x,p.y);
+  } else if(state===STATES.GAMEOVER){
+    if(tryBtn)  tryBtn.hover  = tryBtn.hit(p.x,p.y);
+    if(exitBtn) exitBtn.hover = exitBtn.hit(p.x,p.y);
+  }
+}
+function onPointerMove(ev){
+  const p=localPoint(ev);
+  setHoverState(p);
+}
 
       function onPointerDown(ev){
         const p=localPoint(ev);
@@ -185,11 +215,11 @@
         ctx.drawImage(bg,(LOGICAL_W-w)/2,(LOGICAL_H-h)/2,w,h);
 
         if(!startBtn){
-          startBtn=new ImageButton(images.startBtn, LOGICAL_W/2, LOGICAL_H*0.8);
-          startBtn.scale=Math.min(520, LOGICAL_W*0.7)/images.startBtn.naturalWidth;
-        }
-        startBtn.draw();
-      }
+  startBtn=new ImageButton(images.startBtn, LOGICAL_W/2, LOGICAL_H*0.8);
+  startBtn.setScale(Math.min(520, LOGICAL_W*0.7)/images.startBtn.naturalWidth);
+}
+startBtn.update(dt);
+startBtn.draw();
 
       function drawHUD(){
         ctx.save();
@@ -234,28 +264,34 @@
         ctx.fillText(`$ RIALO terkumpul: ${score}`, LOGICAL_W/2, py+140);
 
         if(!tryBtn){
-          tryBtn=new ImageButton(images.tryBtn, LOGICAL_W/2, LOGICAL_H/2+80);
-          tryBtn.scale=Math.min(520, LOGICAL_W*0.7)/images.tryBtn.naturalWidth;
-        }
-        tryBtn.draw();
+  tryBtn=new ImageButton(images.tryBtn, LOGICAL_W/2, LOGICAL_H/2+40);
+  tryBtn.setScale(Math.min(520, LOGICAL_W*0.70)/images.tryBtn.naturalWidth);
+}
+tryBtn.update(dt);
+tryBtn.draw();
 
-        if(!exitBtn){
-          exitBtn=new ImageButton(images.exitBtn, LOGICAL_W/2, LOGICAL_H/2+200);
-          exitBtn.scale=Math.min(420, LOGICAL_W*0.56)/images.exitBtn.naturalWidth;
-        }
-        exitBtn.draw();
-      }
+if(!exitBtn){
+  exitBtn=new ImageButton(images.exitBtn, LOGICAL_W/2, LOGICAL_H/2+220);
+  exitBtn.setScale(Math.min(420, LOGICAL_W*0.56)/images.exitBtn.naturalWidth);
+}
+exitBtn.update(dt);
+exitBtn.draw();
 
       function tick(){
         requestAnimationFrame(tick);
         const t=now(); if(!lastTs) lastTs=t;
         const dt=Math.min(0.05,(t-lastTs)/1000); lastTs=t;
 
-        if(state===STATES.COVER) drawCover();
-        else if(state===STATES.PLAY){ if(running) updatePlay(dt); drawPlay(); }
-        else if(state===STATES.GAMEOVER) drawGameOver();
-      }
-
+        if(state===STATES.COVER) {
+  drawCover(dt);
+}
+else if(state===STATES.PLAY) {
+  if(running) updatePlay(dt);
+  drawPlay();
+}
+else if(state===STATES.GAMEOVER) {
+  drawGameOver(dt);
+}
       (async function start(){
         fitCanvas();
         await preload();
