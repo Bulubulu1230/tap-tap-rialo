@@ -234,13 +234,13 @@
         ctx.fillText(`$ RIALO terkumpul: ${score}`, LOGICAL_W/2, py+140);
 
         if(!tryBtn){
-          tryBtn=new ImageButton(images.tryBtn, LOGICAL_W/2, LOGICAL_H/2+40);
+          tryBtn=new ImageButton(images.tryBtn, LOGICAL_W/2, LOGICAL_H/2+20);
           tryBtn.scale=Math.min(520, LOGICAL_W*0.7)/images.tryBtn.naturalWidth;
         }
         tryBtn.draw();
 
         if(!exitBtn){
-          exitBtn=new ImageButton(images.exitBtn, LOGICAL_W/2, LOGICAL_H/2+170);
+          exitBtn=new ImageButton(images.exitBtn, LOGICAL_W/2, LOGICAL_H/2+150);
           exitBtn.scale=Math.min(420, LOGICAL_W*0.56)/images.exitBtn.naturalWidth;
         }
         exitBtn.draw();
