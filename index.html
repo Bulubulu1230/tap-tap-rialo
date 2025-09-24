@@ -11,8 +11,23 @@
       font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,"Helvetica Neue",Arial;
       overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;
     }
-    #wrap{position:fixed;inset:0;display:grid;place-items:center;background:#000;}
-    canvas{background:#0b0e12;image-rendering:crisp-edges;image-rendering:pixelated;}
+    /* Perubahan di sini untuk menengahkan canvas */
+    #wrap{
+      position:fixed;
+      inset:0;
+      display:flex; /* Menggunakan flexbox */
+      align-items:center; /* Tengahkan secara vertikal */
+      justify-content:center; /* Tengahkan secara horizontal */
+      background:#000;
+    }
+    canvas{
+      background:#0b0e12;
+      image-rendering:crisp-edges;
+      image-rendering:pixelated;
+      /* Pastikan canvas tidak melebihi lebar atau tinggi viewport */
+      max-width: 100%;
+      max-height: 100%;
+    }
   </style>
 </head>
 <body>
@@ -89,18 +104,24 @@
       }
       update(dt){
         this.y+=this.vy*dt;
-        if(this.y-this.r>LOGICAL_H){ this.alive=false; }
+        if(this.y-this.r>LOGICAL_H){
+          this.alive=false;
+          // Ganti: Hanya kurangi nyawa jika objek yang jatuh adalah 'coin'
+          if(this.type === 'coin') {
+            lives=Math.max(0,lives-1);
+          }
+        }
       }
       draw(){ const f=this.getFrame(); const size=128; ctx.drawImage(f.img,f.sx,f.sy,f.sw,f.sh,this.x-size/2,this.y-size/2,size,size); }
       contains(px,py){ const dx=px-this.x, dy=py-this.y; return dx*dx+dy*dy<=this.r*this.r; }
     }
 
     let state=STATES.COVER, startBtn, tryBtn, exitBtn;
-    let objects=[], score=0, lives=START_LIVES, timer=0; // Ganti: timer mulai dari 0
+    let objects=[], score=0, lives=START_LIVES, timer=0;
     let lastTs=0, spawnAccum=0, spawnRate=0.9, speed=320, running=false;
 
     function resetGame(){
-      objects=[]; score=0; lives=START_LIVES; timer=0; // Ganti: reset timer ke 0
+      objects=[]; score=0; lives=START_LIVES; timer=0;
       spawnAccum=0; spawnRate=0.9; speed=320; lastTs=now(); running=true;
       try{ bgm.currentTime=0; bgm.play(); }catch{}
     }
@@ -145,13 +166,15 @@
     function updatePlay(dt){
       speed += dt*6;
       spawnRate = Math.max(0.4, spawnRate - dt*0.01);
-      timer += dt; // Ganti: timer bertambah
+      timer += dt;
       
       spawnAccum += dt;
       while(spawnAccum>=spawnRate){ spawnAccum-=spawnRate; spawnOne(); }
 
       for(const o of objects) o.update(dt);
-      objects = objects.filter(o=>o.alive && o.y - o.r <= LOGICAL_H+2);
+      objects = objects.filter(o=>o.alive && o.y - o.r <= LOGICAL_H+2); // Filter objek yang sudah jatuh
+
+      if(lives<=0){ state=STATES.GAMEOVER; running=false; stopMusic(); }
     }
 
     function drawCover(){
@@ -183,7 +206,7 @@
       ctx.textAlign="center";
       ctx.fillStyle="#000a"; ctx.fillRect(LOGICAL_W/2-110,20,220,64);
       ctx.fillStyle="#fff"; ctx.font="bold 44px system-ui,-apple-system,Segoe UI,Roboto";
-      ctx.fillText(`${Math.floor(timer)}s`, LOGICAL_W/2, 68); // Ganti: Menampilkan timer yang bertambah
+      ctx.fillText(`${Math.floor(timer)}s`, LOGICAL_W/2, 68);
       ctx.restore();
     }
 
