@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>TAP-TAP RIALO</title>
   <style>
-    :root { --bg:#0b0e12; --fg:#e7edf5; --accent:#ffd034; --danger:#ff5555; }
+    :root { --fg:#e7edf5; }
     html,body{
       margin:0;padding:0;height:100%;background:#000;color:var(--fg);
       font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,"Helvetica Neue",Arial;
@@ -20,9 +20,11 @@
 
   <script>
   (function(){
-    const LOGICAL_W=720, LOGICAL_H=1280;
+    // ===== LOGICAL CANVAS =====
+    const W=720, H=1280;
     const ASSETS_PATH="./";
 
+    // ===== ASSETS =====
     const ASSETS={
       cover:"cover-bg.png",
       bg:"bg-game.png",
@@ -30,51 +32,59 @@
       tryBtn:"btn-tryagain.png",
       exitBtn:"btn-exit.png",
       coinIdle:"coin.png",
-      coinFlip:"flip-coin.png",  // sprite 3 frame horizontal
+      coinFlip:"flip-coin.png",  // 3 frame horizontal
       bombIdle:"bomb.png",
-      bombFlip:"flip-bomb.png"   // sprite 3 frame horizontal
+      bombFlip:"flip-bomb.png"   // 3 frame horizontal
     };
-
-    // ===== Musik tunggal =====
     const BGM_FILE="bgm.mp3";
 
+    // ===== STATES =====
     const STATES={COVER:0, PLAY:1, GAMEOVER:2};
-    const GAME_TIME=30, START_LIVES=3;
+    let state=STATES.COVER;
 
+    // ===== CANVAS =====
     const canvas=document.getElementById('game');
     const ctx=canvas.getContext('2d');
-
-    function fitCanvas(){
-      const dpr=Math.max(1,window.devicePixelRatio||1);
-      const vw=innerWidth, vh=innerHeight;
-      const scale=Math.min(vw/LOGICAL_W, vh/LOGICAL_H);
-      canvas.style.width=(LOGICAL_W*scale|0)+"px";
-      canvas.style.height=(LOGICAL_H*scale|0)+"px";
-      canvas.width=(LOGICAL_W*dpr|0);
-      canvas.height=(LOGICAL_H*dpr|0);
+    function fit(){
+      const dpr=Math.max(1,devicePixelRatio||1);
+      const s=Math.min(innerWidth/W, innerHeight/H);
+      canvas.style.width=(W*s|0)+"px";
+      canvas.style.height=(H*s|0)+"px";
+      canvas.width=(W*dpr|0); canvas.height=(H*dpr|0);
       ctx.setTransform(dpr,0,0,dpr,0,0);
     }
-    addEventListener('resize', fitCanvas);
+    addEventListener('resize',fit);
 
+    // ===== HELPERS =====
     const now=()=>performance.now();
     const rand=(a,b)=>a+Math.random()*(b-a);
-    function loadImage(src){return new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=ASSETS_PATH+src;});}
+    function loadImage(src){
+      return new Promise((res,rej)=>{
+        const i=new Image();
+        i.onload=()=>res(i); i.onerror=rej; i.src=ASSETS_PATH+src;
+      });
+    }
 
-    // ===== preload gambar & musik =====
-    const images={}, bgm=new Audio(ASSETS_PATH+BGM_FILE);
-    bgm.loop=true; bgm.volume=0.35;
-
+    // ===== PRELOAD =====
+    const images={};
+    const bgm=new Audio(ASSETS_PATH+BGM_FILE); bgm.loop=true; bgm.volume=0.35;
     async function preload(){
-      await Promise.all(Object.entries(ASSETS).map(async([k,v])=>images[k]=await loadImage(v)));
-      // Catatan: sebagian browser butuh interaksi user sebelum audio play. Kita panggil saat Start.
+      await Promise.all(Object.entries(ASSETS).map(async([k,v])=>{
+        images[k]=await loadImage(v);
+      }));
     }
 
+    // ===== BUTTON =====
     class ImageButton{
-      constructor(img,x,y){this.img=img;this.x=x;this.y=y;this.scale=1;this.w=img.naturalWidth;this.h=img.naturalHeight;}
-      draw(){const w=this.w*this.scale,h=this.h*this.scale;ctx.drawImage(this.img,this.x-w/2,this.y-h/2,w,h);}
-      hit(px,py){const w=this.w*this.scale,h=this.h*this.scale;return px>=this.x-w/2&&px<=this.x+w/2&&py>=this.y-h/2&&py<=this.y+h/2;}
+      constructor(img,x,y){this.img=img;this.x=x;this.y=y;this.scale=1;
+        this.w=img.naturalWidth; this.h=img.naturalHeight;}
+      draw(){const w=this.w*this.scale,h=this.h*this.scale;
+        ctx.drawImage(this.img,this.x-w/2,this.y-h/2,w,h);}
+      hit(px,py){const w=this.w*this.scale,h=this.h*this.scale;
+        return px>=this.x-w/2 && px<=this.x+w/2 && py>=this.y-h/2 && py<=this.y+h/2;}
     }
 
+    // ===== OBJECT =====
     class Falling{
       constructor(type,x,spd){
         this.type=type; this.x=x; this.y=-80; this.vy=spd; this.r=64; this.alive=true;
@@ -92,159 +102,200 @@
       }
       update(dt){
         this.y+=this.vy*dt;
-        if(this.y-this.r>LOGICAL_H){ this.alive=false; lives=Math.max(0,lives-1); }
+        if(this.y - this.r > H){
+          // JATUH MELEWATI BAWAH
+          this.alive=false;
+          if(this.type==='coin'){ // koin terlewat → nyawa -1
+            lives=Math.max(0,lives-1);
+          }
+          // bomb terlewat → tidak ada efek
+        }
       }
-      draw(){ const f=this.getFrame(); const size=128; ctx.drawImage(f.img,f.sx,f.sy,f.sw,f.sh,this.x-size/2,this.y-size/2,size,size); }
-      contains(px,py){ const dx=px-this.x, dy=py-this.y; return dx*dx+dy*dy<=this.r*this.r; }
+      draw(){
+        const f=this.getFrame(); const size=128;
+        ctx.drawImage(f.img,f.sx,f.sy,f.sw,f.sh,this.x-size/2,this.y-size/2,size,size);
+      }
+      contains(px,py){const dx=px-this.x,dy=py-this.y;return dx*dx+dy*dy<=this.r*this.r;}
     }
 
-    let state=STATES.COVER, startBtn, tryBtn, exitBtn;
-    let objects=[], score=0, lives=START_LIVES, timer=GAME_TIME;
-    let lastTs=0, spawnAccum=0, spawnRate=0.9, speed=320, running=false;
+    // ===== GAME VAR =====
+    let startBtn, tryBtn, exitBtn;
+    let objects=[], score=0, lives=3;
+    let elapsed=0; // timer maju
+    let lastTs=0;
+    let spawnAccum=0;
+    let running=false;
 
     function resetGame(){
-      objects=[]; score=0; lives=START_LIVES; timer=GAME_TIME;
-      spawnAccum=0; spawnRate=0.9; speed=320; lastTs=now(); running=true;
-      // play musik (butuh interaksi user sebelumnya)
+      objects=[]; score=0; lives=3; elapsed=0; lastTs=now(); spawnAccum=0; running=true;
       try{ bgm.currentTime=0; bgm.play(); }catch{}
     }
     function stopMusic(){ try{ bgm.pause(); }catch{} }
 
+    // ===== INPUT =====
     function localPoint(ev){
       const r=canvas.getBoundingClientRect();
-      const sx=LOGICAL_W/r.width, sy=LOGICAL_H/r.height;
-      const c = ev.touches? ev.touches[0] : ev;
-      return { x:(c.clientX-r.left)*sx, y:(c.clientY-r.top)*sy };
+      const sx=W/r.width, sy=H/r.height;
+      const c= ev.touches? ev.touches[0] : ev;
+      return {x:(c.clientX-r.left)*sx, y:(c.clientY-r.top)*sy};
     }
-
     function onPointerDown(ev){
       const p=localPoint(ev);
       if(state===STATES.COVER){
-        if(startBtn && startBtn.hit(p.x,p.y)){ state=STATES.PLAY; resetGame(); ev.preventDefault(); return; }
+        if(startBtn && startBtn.hit(p.x,p.y)){ state=STATES.PLAY; resetGame(); ev.preventDefault(); }
       }else if(state===STATES.PLAY){
         for(let i=objects.length-1;i>=0;i--){
           const o=objects[i];
           if(o.contains(p.x,p.y)){
-            if(o.type==='coin'){ score+=1; } else { lives=Math.max(0,lives-1); }
+            if(o.type==='coin'){ score+=1; }
+            else { // klik bomb → nyawa -1
+              lives=Math.max(0,lives-1);
+            }
             o.alive=false;
             if(lives<=0){ state=STATES.GAMEOVER; running=false; stopMusic(); }
-            ev.preventDefault(); return;
+            ev.preventDefault();
+            return;
           }
         }
       }else if(state===STATES.GAMEOVER){
-        if(tryBtn && tryBtn.hit(p.x,p.y)){ state=STATES.PLAY; resetGame(); ev.preventDefault(); return; }
-        if(exitBtn && exitBtn.hit(p.x,p.y)){ state=STATES.COVER; stopMusic(); ev.preventDefault(); return; }
-      }
-    }
+  if(tryBtn && tryBtn.hit(p.x,p.y)){
+    state=STATES.PLAY;
+    resetGame();
+    ev.preventDefault();
+  }
+  if(exitBtn && exitBtn.hit(p.x,p.y)){
+    state=STATES.COVER;
+    running=false;
+    objects=[]; score=0; lives=3; elapsed=0; // reset penuh
+    stopMusic();
+    ev.preventDefault();
+  }
+}
     canvas.addEventListener('pointerdown', onPointerDown, {passive:false});
     canvas.addEventListener('touchstart', onPointerDown, {passive:false});
 
+    // ===== SPAWN / DIFFICULTY =====
+    function difficulty(){
+      // Semakin lama → makin sulit
+      const speedBase = 320 + elapsed * 8;       // kecepatan jatuh
+      const spawnRate = Math.max(0.30, 0.90 - elapsed * 0.01); // jeda spawn
+      return {speedBase, spawnRate};
+    }
     function spawnOne(){
-      const margin=64, x=rand(margin, LOGICAL_W-margin);
+      const {speedBase}=difficulty();
+      const margin=64, x=rand(margin, W-margin);
       const type=(Math.random()<0.8)?'coin':'bomb';
-      const obj=new Falling(type,x,rand(speed*0.9,speed*1.2));
+      const obj=new Falling(type,x,rand(speedBase*0.9, speedBase*1.2));
       objects.push(obj);
     }
 
+    // ===== UPDATE =====
     function updatePlay(dt){
-      speed += dt*6;
-      spawnRate = Math.max(0.4, spawnRate - dt*0.01);
-      timer -= dt;
-      if(timer<=0){ state=STATES.GAMEOVER; running=false; stopMusic(); }
+      elapsed += dt;
+      const {spawnRate}=difficulty();
 
       spawnAccum += dt;
-      while(spawnAccum>=spawnRate){ spawnAccum-=spawnRate; spawnOne(); }
+      while (spawnAccum >= spawnRate){
+        spawnAccum -= spawnRate;
+        spawnOne();
+      }
 
       for(const o of objects) o.update(dt);
-      objects = objects.filter(o=>o.alive && o.y - o.r <= LOGICAL_H+2);
+      objects = objects.filter(o=>o.alive && o.y - o.r <= H+2);
 
       if(lives<=0){ state=STATES.GAMEOVER; running=false; stopMusic(); }
     }
 
+    // ===== RENDER =====
     function drawCover(){
       const bg=images.cover;
-      const s=Math.max(LOGICAL_W/bg.naturalWidth, LOGICAL_H/bg.naturalHeight);
+      const s=Math.max(W/bg.naturalWidth, H/bg.naturalHeight);
       const w=bg.naturalWidth*s, h=bg.naturalHeight*s;
-      ctx.drawImage(bg,(LOGICAL_W-w)/2,(LOGICAL_H-h)/2,w,h);
+      ctx.drawImage(bg,(W-w)/2,(H-h)/2,w,h);
 
       if(!startBtn){
-        startBtn=new ImageButton(images.startBtn, LOGICAL_W/2, LOGICAL_H*0.8);
-        startBtn.scale=Math.min(520, LOGICAL_W*0.7)/images.startBtn.naturalWidth;
+        startBtn=new ImageButton(images.startBtn, W/2, H*0.8);
+        startBtn.scale=Math.min(520, W*0.7)/images.startBtn.naturalWidth;
       }
       startBtn.draw();
     }
 
     function drawHUD(){
       ctx.save();
-      // skor (kanan atas)
+      // Skor
       ctx.font="bold 36px system-ui,-apple-system,Segoe UI,Roboto";
       ctx.textAlign="right";
-      ctx.fillStyle="#000a"; ctx.fillRect(LOGICAL_W-240,20,220,80);
-      ctx.fillStyle="#fff"; ctx.fillText(`$ RIALO: ${score}`, LOGICAL_W-30, 60);
-      // lives
-      const r=14,g=10,sx=LOGICAL_W-200,sy=90;
-      for(let i=0;i<START_LIVES;i++){
+      ctx.fillStyle="#000a"; ctx.fillRect(W-240,20,220,80);
+      ctx.fillStyle="#fff"; ctx.fillText(`$ RIALO: ${score}`, W-30, 60);
+      // Nyawa
+      const r=14,g=10,sx=W-200,sy=90;
+      for(let i=0;i<3;i++){
         ctx.beginPath(); ctx.arc(sx+i*(r*2+g), sy, r, 0, Math.PI*2);
         ctx.fillStyle = (i<lives) ? "#ff4040" : "#444"; ctx.fill();
       }
-      // timer (tengah atas)
+      // Timer naik
       ctx.textAlign="center";
-      ctx.fillStyle="#000a"; ctx.fillRect(LOGICAL_W/2-110,20,220,64);
+      ctx.fillStyle="#000a"; ctx.fillRect(W/2-140,20,280,64);
       ctx.fillStyle="#fff"; ctx.font="bold 44px system-ui,-apple-system,Segoe UI,Roboto";
-      ctx.fillText(`${Math.max(0, Math.ceil(timer))}s`, LOGICAL_W/2, 68);
+      ctx.fillText(`${Math.floor(elapsed)}s`, W/2, 68);
       ctx.restore();
     }
 
     function drawPlay(){
       const bg=images.bg;
-      const s=Math.max(LOGICAL_W/bg.naturalWidth, LOGICAL_H/bg.naturalHeight);
+      const s=Math.max(W/bg.naturalWidth, H/bg.naturalHeight);
       const w=bg.naturalWidth*s, h=bg.naturalHeight*s;
-      ctx.drawImage(bg,(LOGICAL_W-w)/2,(LOGICAL_H-h)/2,w,h);
+      ctx.drawImage(bg,(W-w)/2,(H-h)/2,w,h);
+
       for(const o of objects) o.draw();
       drawHUD();
     }
 
     function drawGameOver(){
       drawPlay();
-      ctx.fillStyle="rgba(0,0,0,0.55)"; ctx.fillRect(0,0,LOGICAL_W,LOGICAL_H);
+      ctx.fillStyle="rgba(0,0,0,0.55)"; ctx.fillRect(0,0,W,H);
 
-      const pw=540, ph=420, px=(LOGICAL_W-pw)/2, py=(LOGICAL_H-ph)/2;
+      const pw=540, ph=420, px=(W-pw)/2, py=(H-ph)/2;
       ctx.fillStyle="#12161c"; ctx.strokeStyle="#ffffff22"; ctx.lineWidth=2;
       ctx.fillRect(px,py,pw,ph); ctx.strokeRect(px,py,pw,ph);
       ctx.fillStyle="#fff"; ctx.textAlign="center";
       ctx.font="700 54px system-ui,-apple-system,Segoe UI,Roboto";
-      ctx.fillText("Game Over", LOGICAL_W/2, py+80);
+      ctx.fillText("Game Over", W/2, py+80);
       ctx.font="700 36px system-ui,-apple-system,Segoe UI,Roboto";
-      ctx.fillText(`$ RIALO terkumpul: ${score}`, LOGICAL_W/2, py+140);
+      ctx.fillText(`$ RIALO terkumpul: ${score}`, W/2, py+140);
+      ctx.font="500 24px system-ui,-apple-system,Segoe UI,Roboto";
+      ctx.fillText(`Waktu bermain: ${Math.floor(elapsed)} detik`, W/2, py+180);
 
       if(!tryBtn){
-        tryBtn=new ImageButton(images.tryBtn, LOGICAL_W/2, LOGICAL_H/2+40);
-        tryBtn.scale=Math.min(520, LOGICAL_W*0.7)/images.tryBtn.naturalWidth;
+        tryBtn=new ImageButton(images.tryBtn, W/2, H/2+40);
+        tryBtn.scale=Math.min(520, W*0.7)/images.tryBtn.naturalWidth;
       }
       tryBtn.draw();
 
       if(!exitBtn){
-        exitBtn=new ImageButton(images.exitBtn, LOGICAL_W/2, LOGICAL_H/2+170);
-        exitBtn.scale=Math.min(420, LOGICAL_W*0.56)/images.exitBtn.naturalWidth;
+        exitBtn=new ImageButton(images.exitBtn, W/2, H/2+170);
+        exitBtn.scale=Math.min(420, W*0.56)/images.exitBtn.naturalWidth;
       }
       exitBtn.draw();
     }
 
+    // ===== MAIN LOOP =====
+    let last=0;
     function tick(){
       requestAnimationFrame(tick);
-      const t=now(); if(!lastTs) lastTs=t;
-      const dt=Math.min(0.05,(t-lastTs)/1000); lastTs=t;
+      const t=now(); if(!last) last=t;
+      const dt=Math.min(0.05,(t-last)/1000); last=t;
 
       if(state===STATES.COVER) drawCover();
       else if(state===STATES.PLAY){ if(running) updatePlay(dt); drawPlay(); }
       else if(state===STATES.GAMEOVER) drawGameOver();
     }
 
+    // ===== START =====
     (async function start(){
-      fitCanvas();
-      await preload();
-      lastTs=now(); tick();
+      fit(); await preload(); lastTs=now(); tick();
     })();
+
   })();
   </script>
 </body>
