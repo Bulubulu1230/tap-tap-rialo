@@ -7,282 +7,294 @@
   <style>
     :root{ --logical-w:720; --logical-h:1280; --fg:#e7edf5; }
     *{ box-sizing:border-box; touch-action:manipulation; }
-    html,body{ height:100%; margin:0; background:#000; color:var(--fg); font-family:system-ui,Segoe UI,Roboto,Arial; }
-    #game-wrap{ position:fixed; inset:0; display:grid; place-items:center; background:#000; overflow:hidden; user-select:none; -webkit-user-select:none; }
+    html,body{ height:100%; margin:0; background:#000; color:var(--fg);
+      font-family:system-ui,Segoe UI,Roboto,Arial; }
+    #game-wrap{ position:fixed; inset:0; display:grid; place-items:center; background:#000;
+      overflow:hidden; user-select:none; -webkit-user-select:none; }
     canvas{
       width:min(100vw, calc(100vh * (var(--logical-w)/var(--logical-h))));
-      height:calc(var(--logical-h) * ( (min(100vw, calc(100vh * (var(--logical-w)/var(--logical-h)))))/var(--logical-w) ));
+      height:calc(var(--logical-h) * ((min(100vw, calc(100vh * (var(--logical-w)/var(--logical-h)))))/var(--logical-w)));
       image-rendering:pixelated; image-rendering:crisp-edges;
     }
     .hint{ position:fixed; left:8px; bottom:8px; font-size:12px; opacity:.6; pointer-events:none; }
-    /* Overlay error supaya kelihatan kalau ada masalah skrip */
-    #err{
-      position:fixed; inset:auto 8px 8px 8px; background:#1a1a1acc; color:#fff; padding:8px 12px; border:1px solid #ff6;
-      font:12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; display:none; white-space:pre-wrap;
-      max-height:35vh; overflow:auto; border-radius:8px;
-    }
+    #err{ position:fixed; inset:auto 8px 8px 8px; display:none; background:#111a; color:#fff;
+      border:1px solid #ff6; padding:8px 12px; font:12px ui-monospace,monospace; white-space:pre-wrap; border-radius:8px; }
   </style>
 </head>
 <body>
   <div id="game-wrap"><canvas id="game" width="720" height="1280"></canvas></div>
-  <div class="hint">Tap koin untuk skor • Jangan tap bom!</div>
+  <div class="hint">Tap koin = +1 $RIALO • Tap bom = -1 nyawa</div>
   <div id="err"></div>
 
-  <!-- Musik game: autoplay (muted) -> unmute saat START -->
+  <!-- Musik: autoplay (muted) -> unmute saat START (aturan browser) -->
   <audio id="bgm" src="bgm.mp3" preload="auto" loop autoplay muted></audio>
 
   <script>
-  // ======== Overlay error agar tidak "blank" ========
+  // ===== Overlay error biar gak "blank" =====
   const errBox = document.getElementById('err');
-  function showError(msg){
-    errBox.style.display = 'block';
-    errBox.textContent = 'ERROR: ' + msg;
-  }
-  window.addEventListener('error', e => showError(e.message || String(e)));
-  window.addEventListener('unhandledrejection', e => showError((e.reason && e.reason.message) || String(e.reason)));
+  const showError = (m)=>{ errBox.style.display='block'; errBox.textContent='ERROR: '+m; };
+  window.addEventListener('error', e=>showError(e.message||String(e)));
+  window.addEventListener('unhandledrejection', e=>showError((e.reason&&e.reason.message)||String(e.reason)));
 
   // =======================
-  //  KONFIG & ASET (ROOT)
+  //  KONFIGURASI
   // =======================
-  const LOGICAL_W = 720, LOGICAL_H = 1280;
-  const ASSET_PATHS = {
-    coverBg:   'cover-bg.png',
-    gameBg:    'bg-game.png',
-    startBtn:  'btn-start.png',
-    tryBtn:    'btn-tryagain.png',
-    exitBtn:   'btn-exit.png',
-    coin:      'coin.png',       // fallback
-    bomb:      'bomb.png',       // fallback
-    flipCoin:  'flip-coin.png',  // sprite strip
-    flipBomb:  'flip-bomb.png'   // sprite strip
+  const W=720,H=1280;
+  const STATES={COVER:0,PLAY:1,OVER:2};
+  const COIN_FRAMES=3, BOMB_FRAMES=3; // ganti jika sprite frame beda
+  const COIN_FPS=12, BOMB_FPS=10;
+  const COIN_PROB=0.72, SPAWN_MS=700;
+  const SPEED_MIN=260, SPEED_MAX=600;
+  const RADIUS=56;        // radius klik
+  const LIVES_MAX=3;
+  const SIZE=128;         // ukuran gambar objek saat digambar
+
+  // Aset (root path)
+  const ASSET={
+    cover:'cover-bg.png',
+    bg:'bg-game.png',
+    start:'btn-start.png',
+    try:'btn-tryagain.png',
+    exit:'btn-exit.png',
+    coin:'coin.png', bomb:'bomb.png',
+    fcoin:'flip-coin.png', fbomb:'flip-bomb.png'
   };
-  const COIN_FRAMES = 3, BOMB_FRAMES = 3; // ganti kalau frame berbeda
-  const COIN_FPS = 12, BOMB_FPS = 10;
-
-  const STATES = { COVER:0, PLAY:1, GAMEOVER:2 };
-  const COIN_PROB = 0.72, SPAWN_EVERY = 700;     // ms
-  const SPEED_MIN = 240, SPEED_MAX = 580;        // px/detik
-  const OBJ_RADIUS = 56, LIVES_MAX = 3;
-  const DRAW_SIZE = 128;
-
-  const canvas = document.getElementById('game');
-  const ctx = canvas.getContext('2d');
-  const bgm = document.getElementById('bgm');
 
   // =======================
-  //  MUAT GAMBAR (tahan error)
+  //  KANVAS & AUDIO
   // =======================
-  const IM = {};
-  function loadImage(key, src){
-    return new Promise((resolve)=>{
-      const img = new Image();
-      img.onload = ()=>{ IM[key]=img; resolve({ok:true}); };
-      img.onerror = ()=>{ console.warn('Gagal load', src); resolve({ok:false}); };
-      img.src = src;
-    });
-  }
+  const cvs=document.getElementById('game'), ctx=cvs.getContext('2d');
+  const bgm=document.getElementById('bgm');
 
   // =======================
-  //  STATE
+  //  MUAT GAMBAR
   // =======================
-  let state = STATES.COVER, score = 0, lives = LIVES_MAX;
-  let objects = []; // {x,y,vy,type,img,frames,fps,fw,fh,frame,ft}
-  let lastTime = 0, spawnAcc = 0;
-  const buttons = {
-    start:{x: LOGICAL_W/2 - 140, y: LOGICAL_H - 220, w: 280, h: 120, hover:false},
-    try:  {x: LOGICAL_W/2 - 300, y: LOGICAL_H/2 + 160, w: 260, h: 110, hover:false},
-    exit: {x: LOGICAL_W/2 +   40, y: LOGICAL_H/2 + 160, w: 260, h: 110, hover:false},
+  const IMG={};
+  const loadImage=(k,src)=>new Promise(res=>{
+    const im=new Image();
+    im.onload=()=>{ IMG[k]=im; res(true); };
+    im.onerror=()=>{ console.warn('gagal muat',src); res(false); };
+    im.src=src;
+  });
+
+  // =======================
+  //  STATE GAME
+  // =======================
+  let state=STATES.COVER;
+  let score=0, lives=LIVES_MAX;
+  let objects=[]; // {x,y,vy,type,img,frames,fps,fw,fh,frame,ft}
+  let lastT=0, acc=0;
+
+  // tombol rect
+  const BTN={
+    start:{x:W/2-140,y:H-220,w:280,h:120,hover:false},
+    try:{x:W/2-300,y:H/2+160,w:260,h:110,hover:false},
+    exit:{x:W/2+40,y:H/2+160,w:260,h:110,hover:false}
   };
+  // area klik "powered by rialo"
+  let poweredRect=null;
 
   // =======================
   //  UTIL & INPUT
   // =======================
-  const rand=(a,b)=>Math.random()*(b-a)+a;
-  const pointInRect=(x,y,r)=>x>=r.x && x<=r.x+r.w && y>=r.y && y<=r.y+r.h;
-  const dist2=(ax,ay,bx,by)=>{const dx=ax-bx,dy=ay-by;return dx*dx+dy*dy;};
+  const rnd=(a,b)=>Math.random()*(b-a)+a;
+  const hitRect=(x,y,r)=>x>=r.x && x<=r.x+r.w && y>=r.y && y<=r.y+r.h;
+  const d2=(ax,ay,bx,by)=>{const dx=ax-bx,dy=ay-by;return dx*dx+dy*dy;};
 
-  function localPoint(ev){
-    const rect = canvas.getBoundingClientRect();
-    const sx = LOGICAL_W / rect.width, sy = LOGICAL_H / rect.height;
-    const c = ev.touches ? ev.touches[0] : ev;
-    return { x:(c.clientX-rect.left)*sx, y:(c.clientY-rect.top)*sy };
+  function lp(ev){
+    const r=cvs.getBoundingClientRect();
+    const sx=W/r.width, sy=H/r.height;
+    const c=ev.touches?ev.touches[0]:ev;
+    return {x:(c.clientX-r.left)*sx, y:(c.clientY-r.top)*sy};
   }
 
-  canvas.addEventListener('mousemove', ev=>{
-    const p = localPoint(ev);
-    if(state===STATES.COVER){
-      buttons.start.hover = pointInRect(p.x,p.y,buttons.start);
-    }else if(state===STATES.GAMEOVER){
-      buttons.try.hover  = pointInRect(p.x,p.y,buttons.try);
-      buttons.exit.hover = pointInRect(p.x,p.y,buttons.exit);
+  cvs.addEventListener('mousemove',e=>{
+    const p=lp(e);
+    if(state===STATES.COVER) BTN.start.hover=hitRect(p.x,p.y,BTN.start);
+    else if(state===STATES.OVER){
+      BTN.try.hover = hitRect(p.x,p.y,BTN.try);
+      BTN.exit.hover= hitRect(p.x,p.y,BTN.exit);
     }
   });
-  canvas.addEventListener('mousedown', onPress);
-  canvas.addEventListener('touchstart', onPress, {passive:false});
-
-  function onPress(ev){
-    ev.preventDefault();
-    const p = localPoint(ev);
-
-    if(state===STATES.COVER && pointInRect(p.x,p.y,buttons.start)){
-      bgm.muted = false; bgm.play().catch(()=>{});
+  cvs.addEventListener('mousedown',onPress);
+  cvs.addEventListener('touchstart',onPress,{passive:false});
+  function onPress(e){
+    e.preventDefault();
+    const p=lp(e);
+    if(state===STATES.COVER && hitRect(p.x,p.y,BTN.start)){
+      bgm.muted=false; bgm.play().catch(()=>{});
       startGame(); return;
     }
-
     if(state===STATES.PLAY){
       let hit=-1;
       for(let i=objects.length-1;i>=0;i--){
         const o=objects[i];
-        if(dist2(p.x,p.y,o.x,o.y)<=OBJ_RADIUS*OBJ_RADIUS){ hit=i; break; }
+        if(d2(p.x,p.y,o.x,o.y)<=RADIUS*RADIUS){ hit=i; break; }
       }
       if(hit>=0){
         const o=objects[hit];
-        if(o.type==='coin') score++; else { lives--; screenShake(6,150); }
+        if(o.type==='coin') score++; else { lives--; shake(6,150); }
         objects.splice(hit,1);
-        if(lives<=0) toGameOver();
+        if(lives<=0) toOver();
       }
       return;
     }
-
-    if(state===STATES.GAMEOVER){
-      if(pointInRect(p.x,p.y,buttons.try)) { startGame(); return; }
-      if(pointInRect(p.x,p.y,buttons.exit)){ toCover();  return; }
+    if(state===STATES.OVER){
+      if(hitRect(p.x,p.y,BTN.try)){ startGame(); return; }
+      if(hitRect(p.x,p.y,BTN.exit)){ toCover();  return; }
+      if(poweredRect && hitRect(p.x,p.y, poweredRect)){
+        window.open('https://www.rialo.io/','_blank','noopener');
+      }
     }
   }
 
   // =======================
   //  TRANSISI
   // =======================
-  function toCover(){ state=STATES.COVER; score=0; lives=LIVES_MAX; objects.length=0; spawnAcc=0; }
-  function startGame(){ state=STATES.PLAY; score=0; lives=LIVES_MAX; objects.length=0; spawnAcc=0; }
-  function toGameOver(){ state=STATES.GAMEOVER; }
+  function toCover(){ state=STATES.COVER; score=0; lives=LIVES_MAX; objects.length=0; acc=0; }
+  function startGame(){ state=STATES.PLAY; score=0; lives=LIVES_MAX; objects.length=0; acc=0; }
+  function toOver(){ state=STATES.OVER; }
 
   // =======================
   //  SPAWN & ANIM
   // =======================
-  function spawnObject(){
-    const isCoin = Math.random() < COIN_PROB;
-    const type   = isCoin ? 'coin' : 'bomb';
-    const x = rand(60, LOGICAL_W-60), y = -80, vy = rand(SPEED_MIN, SPEED_MAX);
-
-    let img, frames, fps;
-    if(isCoin && IM.flipCoin){ img=IM.flipCoin; frames=COIN_FRAMES; fps=COIN_FPS; }
-    else if(!isCoin && IM.flipBomb){ img=IM.flipBomb; frames=BOMB_FRAMES; fps=BOMB_FPS; }
-    else { img=isCoin?IM.coin:IM.bomb; frames=1; fps=1; }
-
-    const fw = img ? Math.floor(img.naturalWidth/frames) : DRAW_SIZE;
-    const fh = img ? img.naturalHeight : DRAW_SIZE;
-
+  function spawn(){
+    const isCoin=Math.random()<COIN_PROB;
+    const type=isCoin?'coin':'bomb';
+    const x=rnd(60,W-60), y=-80, vy=rnd(SPEED_MIN,SPEED_MAX);
+    let img,frames,fps;
+    if(isCoin && IMG.fcoin){ img=IMG.fcoin; frames=COIN_FRAMES; fps=COIN_FPS; }
+    else if(!isCoin && IMG.fbomb){ img=IMG.fbomb; frames=BOMB_FRAMES; fps=BOMB_FPS; }
+    else { img=isCoin?IMG.coin:IMG.bomb; frames=1; fps=1; }
+    const fw=img?Math.floor(img.naturalWidth/frames):SIZE, fh=img?img.naturalHeight:SIZE;
     objects.push({x,y,vy,type,img,frames,fps,fw,fh,frame:0,ft:0});
   }
 
-  let shakeMag=0, shakeTime=0;
-  function screenShake(mag,ms){ shakeMag=mag; shakeTime=ms; }
+  let sMag=0,sTime=0;
+  const shake=(m,ms)=>{ sMag=m; sTime=ms; };
 
   function update(dt){
     if(state!==STATES.PLAY) return;
-
-    spawnAcc += dt*1000;
-    while(spawnAcc >= SPAWN_EVERY){ spawnObject(); spawnAcc -= SPAWN_EVERY; }
+    acc+=dt*1000;
+    while(acc>=SPAWN_MS){ spawn(); acc-=SPAWN_MS; }
 
     for(let i=objects.length-1;i>=0;i--){
       const o=objects[i];
-      o.y += o.vy*dt;
-
+      o.y+=o.vy*dt;
       if(o.frames>1){
-        o.ft += dt;
-        const dur = 1/o.fps;
-        while(o.ft >= dur){ o.ft -= dur; o.frame = (o.frame+1)%o.frames; }
+        o.ft+=dt; const dur=1/o.fps;
+        while(o.ft>=dur){ o.ft-=dur; o.frame=(o.frame+1)%o.frames; }
       }
-
-      if(o.y - OBJ_RADIUS > LOGICAL_H){
-        if(o.type==='coin'){ lives--; if(lives<=0){ objects.splice(i,1); toGameOver(); break; } }
+      if(o.y-RADIUS>H){
+        if(o.type==='coin'){ lives--; if(lives<=0){ objects.splice(i,1); toOver(); break; } }
         objects.splice(i,1);
       }
     }
-
-    if(shakeTime>0){ shakeTime-=dt*1000; if(shakeTime<=0) shakeMag=0; }
+    if(sTime>0){ sTime-=dt*1000; if(sTime<=0) sMag=0; }
   }
 
   // =======================
-  //  DRAW
+  //  GRAFIS
   // =======================
+  function drawHearts(n){
+    const x0=16, y=20, gap=40, r=10;
+    for(let i=0;i<n;i++){
+      const x=x0+i*gap;
+      ctx.save();
+      ctx.translate(x, y+10);
+      ctx.scale(1.4,1.4);
+      ctx.fillStyle='#ff5b77';
+      ctx.beginPath();
+      // path hati sederhana
+      ctx.moveTo(0,0);
+      ctx.bezierCurveTo(0,-8, -12,-10, -12,2);
+      ctx.bezierCurveTo(-12,14, 0,18, 0,26);
+      ctx.bezierCurveTo(0,18, 12,14, 12,2);
+      ctx.bezierCurveTo(12,-10, 0,-8, 0,0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
   function drawCover(){
-    if(IM.coverBg) ctx.drawImage(IM.coverBg,0,0,LOGICAL_W,LOGICAL_H);
-    else { ctx.fillStyle='#091219'; ctx.fillRect(0,0,LOGICAL_W,LOGICAL_H); }
-
-    // Judul
-    ctx.fillStyle='rgba(0,0,0,.45)'; ctx.fillRect(0,0,LOGICAL_W,140);
+    if(IMG.cover) ctx.drawImage(IMG.cover,0,0,W,H);
+    else { ctx.fillStyle='#091219'; ctx.fillRect(0,0,W,H); }
+    ctx.fillStyle='rgba(0,0,0,.45)'; ctx.fillRect(0,0,W,140);
     ctx.fillStyle='#fff'; ctx.font='bold 48px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText('Tap-Tap Rialo', LOGICAL_W/2, 80);
-
-    // Tombol START (fallback kotak kalau PNG belum ada)
-    const b=buttons.start;
-    if(IM.startBtn) ctx.drawImage(IM.startBtn, b.x,b.y,b.w,b.h);
-    else{ ctx.fillStyle='#2b8a3e'; ctx.fillRect(b.x,b.y,b.w,b.h);
-          ctx.fillStyle='#fff'; ctx.font='bold 40px system-ui'; ctx.fillText('START', b.x+b.w/2, b.y+b.h/2); }
-
+    ctx.fillText('Tap-Tap Rialo', W/2, 80);
+    const b=BTN.start;
+    if(IMG.start) ctx.drawImage(IMG.start,b.x,b.y,b.w,b.h);
+    else { ctx.fillStyle='#2b8a3e'; ctx.fillRect(b.x,b.y,b.w,b.h);
+           ctx.fillStyle='#fff'; ctx.font='bold 40px system-ui'; ctx.fillText('START', b.x+b.w/2, b.y+b.h/2); }
     ctx.fillStyle='rgba(255,255,255,.9)'; ctx.font='24px system-ui';
-    ctx.fillText('Tekan START untuk memulai (musik aktif)', LOGICAL_W/2, b.y+b.h+34);
+    ctx.fillText('Tap START untuk memulai • Musik aktif', W/2, b.y+b.h+34);
   }
 
   function drawPlay(){
-    if(IM.gameBg) ctx.drawImage(IM.gameBg,0,0,LOGICAL_W,LOGICAL_H);
-    else { ctx.fillStyle='#0b0e12'; ctx.fillRect(0,0,LOGICAL_W,LOGICAL_H); }
-
+    if(IMG.bg) ctx.drawImage(IMG.bg,0,0,W,H);
+    else { ctx.fillStyle='#0b0e12'; ctx.fillRect(0,0,W,H); }
+    // objek
     for(const o of objects){
       const img=o.img;
       if(img && o.frames>1){
-        const sx=o.frame*o.fw, sy=0, sw=o.fw, sh=o.fh;
-        const dw=DRAW_SIZE, dh=DRAW_SIZE;
-        ctx.drawImage(img, sx,sy,sw,sh, Math.round(o.x-dw/2), Math.round(o.y-dh/2), dw,dh);
+        const sx=o.frame*o.fw, sy=0;
+        ctx.drawImage(img, sx,sy,o.fw,o.fh, Math.round(o.x-SIZE/2), Math.round(o.y-SIZE/2), SIZE,SIZE);
       }else if(img){
-        const dw=DRAW_SIZE, dh=DRAW_SIZE;
-        ctx.drawImage(img, 0,0, img.naturalWidth, img.naturalHeight, Math.round(o.x-dw/2), Math.round(o.y-dh/2), dw,dh);
+        ctx.drawImage(img, 0,0,img.naturalWidth,img.naturalHeight, Math.round(o.x-SIZE/2), Math.round(o.y-SIZE/2), SIZE,SIZE);
       }else{
         ctx.fillStyle=(o.type==='coin')?'#ffd24a':'#ff5151';
-        ctx.beginPath(); ctx.arc(o.x,o.y,OBJ_RADIUS,0,Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(o.x,o.y,RADIUS,0,Math.PI*2); ctx.fill();
       }
     }
-
     // HUD
-    ctx.fillStyle='rgba(0,0,0,.35)'; ctx.fillRect(0,0,LOGICAL_W,72);
-    ctx.fillStyle='#fff'; ctx.font='28px system-ui'; ctx.textAlign='left'; ctx.fillText('Skor: '+score, 18, 46);
-    ctx.textAlign='right'; ctx.fillStyle = lives>=2? '#aef1b8' : (lives===1? '#ffd24a' : '#ff9c9c');
-    ctx.fillText('Nyawa: '+lives, LOGICAL_W-18, 46);
+    ctx.fillStyle='rgba(0,0,0,.35)'; ctx.fillRect(0,0,W,72);
+    // skor = $RIALO
+    ctx.fillStyle='#fff'; ctx.font='28px system-ui'; ctx.textAlign='left';
+    ctx.fillText('Skor: '+score+'  ( '+score+' $RIALO )', 18, 46);
+    // love/nyawa
+    drawHearts(lives);
   }
 
-  function drawGameOver(){
+  function drawOver(){
     drawPlay();
-    ctx.fillStyle='rgba(0,0,0,.55)'; ctx.fillRect(0,0,LOGICAL_W,LOGICAL_H);
+    ctx.fillStyle='rgba(0,0,0,.55)'; ctx.fillRect(0,0,W,H);
     ctx.fillStyle='#fff'; ctx.font='bold 56px system-ui'; ctx.textAlign='center';
-    ctx.fillText('CONGRATULATION', LOGICAL_W/2, LOGICAL_H/2 - 140);
-
+    ctx.fillText('CONGRATULATION', W/2, H/2 - 140);
+    // kategori skor
     const cat = (score<=30) ? 'Bad People' : (score<=60 ? 'Good People' : 'Amazing People');
-    ctx.font='bold 40px system-ui'; ctx.fillText('Score: '+score, LOGICAL_W/2, LOGICAL_H/2 - 80);
-    ctx.font='32px system-ui'; ctx.fillStyle=(score<=30)?'#ff7575':(score<=60?'#ffd24a':'#aef1b8');
-    ctx.fillText(cat, LOGICAL_W/2, LOGICAL_H/2 - 30);
-
-    const t=buttons.try, e=buttons.exit;
-    if(IM.tryBtn) ctx.drawImage(IM.tryBtn, t.x,t.y,t.w,t.h); else { ctx.fillStyle='#3478f6'; ctx.fillRect(t.x,t.y,t.w,t.h); }
-    if(IM.exitBtn) ctx.drawImage(IM.exitBtn, e.x,e.y,e.w,e.h); else { ctx.fillStyle='#ff5151'; ctx.fillRect(e.x,e.y,e.w,e.h); }
-
-    ctx.fillStyle='#fff'; ctx.font='24px system-ui'; ctx.fillText('Tap tombol untuk lanjut', LOGICAL_W/2, e.y+e.h+36);
+    ctx.font='bold 40px system-ui'; ctx.fillText('Score: '+score+'  ( '+score+' $RIALO )', W/2, H/2 - 80);
+    ctx.font='32px system-ui';
+    ctx.fillStyle=(score<=30)?'#ff7575':(score<=60?'#ffd24a':'#aef1b8');
+    ctx.fillText(cat, W/2, H/2 - 30);
+    // tombol
+    const t=BTN.try, e=BTN.exit;
+    if(IMG.try) ctx.drawImage(IMG.try,t.x,t.y,t.w,t.h); else { ctx.fillStyle='#3478f6'; ctx.fillRect(t.x,t.y,t.w,t.h); }
+    if(IMG.exit) ctx.drawImage(IMG.exit,e.x,e.y,e.w,e.h); else { ctx.fillStyle='#ff5151'; ctx.fillRect(e.x,e.y,e.w,e.h); }
+    // powered by rialo (klik -> rialo.io)
+    const text='powered by rialo';
+    ctx.font='18px system-ui'; ctx.fillStyle='rgba(255,255,255,.85)'; ctx.textAlign='center';
+    const tx=W/2, ty=H-18;
+    ctx.fillText(text, tx, ty);
+    const w=ctx.measureText(text).width;
+    poweredRect={x:tx-w/2-6, y:ty-20, w:w+12, h:24};
+    // garis tipis bawah teks (indikasi link)
+    ctx.strokeStyle='rgba(255,255,255,.6)'; ctx.beginPath(); ctx.moveTo(tx-w/2, ty+4); ctx.lineTo(tx+w/2, ty+4); ctx.stroke();
   }
 
   // =======================
   //  LOOP
   // =======================
-  let shakeMag=0, shakeTime=0;
+  let ox=0,oy=0;
   function loop(ts){
     try{
-      const dt = Math.min(0.033, (ts - (lastTime||ts)) / 1000); lastTime = ts;
-      let ox=0, oy=0;
-      if(shakeTime>0){ shakeTime-=dt*1000; const m=shakeTime>0?shakeMag:0; ox=(Math.random()*2-1)*m; oy=(Math.random()*2-1)*m; if(shakeTime<=0) shakeMag=0; }
+      const dt=Math.min(0.033, (ts-(lastT||ts))/1000); lastT=ts;
+      // shake
+      if(sTime>0){ sTime-=dt*1000; const m=sTime>0?sMag:0; ox=(Math.random()*2-1)*m; oy=(Math.random()*2-1)*m; if(sTime<=0) sMag=0; } else { ox=oy=0; }
       ctx.save(); ctx.translate(ox,oy);
       if(state===STATES.COVER) drawCover();
       else if(state===STATES.PLAY){ update(dt); drawPlay(); }
-      else if(state===STATES.GAMEOVER) drawGameOver();
+      else drawOver();
       ctx.restore();
     }catch(e){ showError(e.message||String(e)); }
     requestAnimationFrame(loop);
@@ -292,19 +304,17 @@
   //  INIT
   // =======================
   (async function init(){
-    try{
-      await Promise.all([
-        loadImage('coverBg',  ASSET_PATHS.coverBg),
-        loadImage('gameBg',   ASSET_PATHS.gameBg),
-        loadImage('startBtn', ASSET_PATHS.startBtn),
-        loadImage('tryBtn',   ASSET_PATHS.tryBtn),
-        loadImage('exitBtn',  ASSET_PATHS.exitBtn),
-        loadImage('coin',     ASSET_PATHS.coin),
-        loadImage('bomb',     ASSET_PATHS.bomb),
-        loadImage('flipCoin', ASSET_PATHS.flipCoin),
-        loadImage('flipBomb', ASSET_PATHS.flipBomb),
-      ]);
-    }catch(e){ showError(e.message||String(e)); }
+    await Promise.all([
+      loadImage('cover',ASSET.cover),
+      loadImage('bg',ASSET.bg),
+      loadImage('start',ASSET.start),
+      loadImage('try',ASSET.try),
+      loadImage('exit',ASSET.exit),
+      loadImage('coin',ASSET.coin),
+      loadImage('bomb',ASSET.bomb),
+      loadImage('fcoin',ASSET.fcoin),
+      loadImage('fbomb',ASSET.fbomb),
+    ]);
     toCover();
     requestAnimationFrame(loop);
   })();
