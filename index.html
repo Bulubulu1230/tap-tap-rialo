@@ -1,303 +1,431 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="id">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>TAP-TAP RIALO</title>
-  <style>
-    :root { --bg:#0b0e12; --fg:#e7edf5; --accent:#ffd034; --danger:#ff5555; }
-    html,body{
-      margin:0;padding:0;height:100%;background:#000;color:var(--fg);
-      font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,"Helvetica Neue",Arial;
-      overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;
-    }
-    /* Mengatur game agar selalu di tengah */
-    #wrap{
-      position:fixed;
-      inset:0;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      background:#000;
-    }
-    canvas{
-      background:#0b0e12;
-      image-rendering:crisp-edges;
-      image-rendering:pixelated;
-      max-width: 100%;
-      max-height: 100%;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Koin Jatuh</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Arial', sans-serif;
+        }
+        
+        body {
+            overflow: hidden;
+            background-color: #000;
+        }
+        
+        .screen {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 0.5s;
+        }
+        
+        #cover-screen {
+            background-image: url('cover-bg.png');
+            background-size: cover;
+            background-position: center;
+            z-index: 10;
+        }
+        
+        #game-screen {
+            background-image: url('bg-game.png');
+            background-size: cover;
+            background-position: center;
+            z-index: 5;
+            display: none;
+        }
+        
+        #game-over-screen {
+            background-color: rgba(0, 0, 0, 0.8);
+            z-index: 15;
+            display: none;
+            color: white;
+            text-align: center;
+        }
+        
+        h1 {
+            font-size: 48px;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+        
+        h2 {
+            font-size: 36px;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+        
+        .score-display {
+            font-size: 32px;
+            margin-bottom: 30px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+        
+        .category {
+            font-size: 28px;
+            margin-bottom: 30px;
+            font-style: italic;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+        
+        .button-container {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .btn {
+            width: 200px;
+            height: 80px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        .btn:hover {
+            transform: scale(1.05);
+        }
+        
+        #btn-start {
+            margin-top: 300px;
+        }
+        
+        .stats {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            font-size: 24px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+        
+        .falling-object {
+            position: absolute;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+        
+        .falling-object:hover {
+            transform: scale(1.1);
+        }
+        
+        .coin {
+            background-image: url('coin.png');
+            background-size: contain;
+            background-repeat: no-repeat;
+        }
+        
+        .bomb {
+            background-image: url('bomb.png');
+            background-size: contain;
+            background-repeat: no-repeat;
+        }
+        
+        .heart {
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            background-color: red;
+            margin: 0 5px;
+            transform: rotate(45deg);
+            position: relative;
+        }
+        
+        .heart:before, .heart:after {
+            content: '';
+            width: 30px;
+            height: 30px;
+            background-color: red;
+            border-radius: 50%;
+            position: absolute;
+        }
+        
+        .heart:before {
+            top: -15px;
+            left: 0;
+        }
+        
+        .heart:after {
+            top: 0;
+            left: -15px;
+        }
+    </style>
 </head>
 <body>
-  <div id="wrap"><canvas id="game" width="720" height="1280"></canvas></div>
-  <script>
-    (function(){
-      const LOGICAL_W=720, LOGICAL_H=1280;
-      const ASSETS_PATH="./";
-
-      const ASSETS={
-        cover:"cover-bg.png",
-        bg:"bg-game.png",
-        startBtn:"btn-start.png",
-        tryBtn:"btn-tryagain.png",
-        exitBtn:"btn-exit.png",
-        coinIdle:"coin.png",
-        coinFlip:"flip-coin.png",
-        bombIdle:"bomb.png",
-        bombFlip:"flip-bomb.png"
-      };
-
-      const BGM_FILE="bgm.mp3";
-
-      const STATES={COVER:0, PLAY:1, GAMEOVER:2};
-      const GAME_TIME=30, START_LIVES=3;
-
-      const canvas=document.getElementById('game');
-      const ctx=canvas.getContext('2d');
-
-      function fitCanvas(){
-        const dpr=Math.max(1,window.devicePixelRatio||1);
-        const vw=innerWidth, vh=innerHeight;
-        const scale=Math.min(vw/LOGICAL_W, vh/LOGICAL_H);
-        canvas.style.width=(LOGICAL_W*scale|0)+"px";
-        canvas.style.height=(LOGICAL_H*scale|0)+"px";
-        canvas.width=(LOGICAL_W*dpr|0);
-        canvas.height=(LOGICAL_H*dpr|0);
-        ctx.setTransform(dpr,0,0,dpr,0,0);
-      }
-      addEventListener('resize', fitCanvas);
-
-      const now=()=>performance.now();
-      const rand=(a,b)=>a+Math.random()*(b-a);
-      function loadImage(src){return new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=ASSETS_PATH+src;});}
-
-      const images={}, bgm=new Audio(ASSETS_PATH+BGM_FILE);
-      bgm.loop=true; bgm.volume=0.35;
-
-      async function preload(){
-        await Promise.all(Object.entries(ASSETS).map(async([k,v])=>images[k]=await loadImage(v)));
-      }
-
-      class ImageButton{
-  constructor(img,x,y){
-    this.img=img; this.x=x; this.y=y;
-    this.w=img.naturalWidth; this.h=img.naturalHeight;
-    this.baseScale=1; this.scale=1; this.hover=false;
-  }
-  setScale(s){ this.baseScale=s; if(this.scale===1) this.scale=s; }
-  update(dt){
-    const target = this.hover ? this.baseScale*1.08 : this.baseScale;
-    const k = Math.min(1, dt*12);
-    this.scale += (target - this.scale)*k;
-  }
-  draw(){ const w=this.w*this.scale, h=this.h*this.scale;
-    ctx.drawImage(this.img,this.x-w/2,this.y-h/2,w,h); }
-  hit(px,py){ const w=this.w*this.scale, h=this.h*this.scale;
-    return px>=this.x-w/2 && px<=this.x+w/2 && py>=this.y-h/2 && py<=this.y+h/2; }
-}
-      
-      class Falling{
-        constructor(type,x,spd){
-          this.type=type; this.x=x; this.y=-80; this.vy=spd; this.r=64; this.alive=true;
-          this.spawnTime=now();
-          this.idleImg=(type==='coin')?images.coinIdle:images.bombIdle;
-          this.flipImg=(type==='coin')?images.coinFlip:images.bombFlip;
-          this.flipCols=3; this.flipFPS=10;
+    <!-- Layar Awal -->
+    <div id="cover-screen" class="screen">
+        <img src="btn-start.png" alt="START" id="btn-start" class="btn">
+    </div>
+    
+    <!-- Layar Game -->
+    <div id="game-screen" class="screen">
+        <div class="stats">
+            <div id="score">Skor: 0</div>
+            <div id="lives">Nyawa: <span id="hearts"></span></div>
+        </div>
+        <!-- Objek jatuh akan ditambahkan secara dinamis -->
+    </div>
+    
+    <!-- Layar Game Over -->
+    <div id="game-over-screen" class="screen">
+        <h1>CONGRATULATION</h1>
+        <div class="score-display">Skor Anda: <span id="final-score">0</span></div>
+        <div class="category" id="category">Bad People</div>
+        <div class="button-container">
+            <img src="btn-tryagain.png" alt="TRY AGAIN" id="btn-tryagain" class="btn">
+            <img src="btn-ext.png" alt="EXIT" id="btn-exit" class="btn">
+        </div>
+    </div>
+    
+    <audio id="bgm" loop>
+        <source src="bgm.mp3" type="audio/mpeg">
+    </audio>
+    
+    <script>
+        // Variabel game
+        let score = 0;
+        let lives = 3;
+        let gameActive = false;
+        let fallingObjects = [];
+        let objectId = 0;
+        let spawnInterval;
+        let gameSpeed = 1500; // ms antara spawn objek
+        
+        // Elemen DOM
+        const coverScreen = document.getElementById('cover-screen');
+        const gameScreen = document.getElementById('game-screen');
+        const gameOverScreen = document.getElementById('game-over-screen');
+        const btnStart = document.getElementById('btn-start');
+        const btnTryAgain = document.getElementById('btn-tryagain');
+        const btnExit = document.getElementById('btn-exit');
+        const scoreDisplay = document.getElementById('score');
+        const livesDisplay = document.getElementById('lives');
+        const heartsContainer = document.getElementById('hearts');
+        const finalScoreDisplay = document.getElementById('final-score');
+        const categoryDisplay = document.getElementById('category');
+        const bgm = document.getElementById('bgm');
+        
+        // Fungsi untuk memulai game
+        function startGame() {
+            // Reset variabel game
+            score = 0;
+            lives = 3;
+            gameActive = true;
+            fallingObjects = [];
+            objectId = 0;
+            gameSpeed = 1500;
+            
+            // Update tampilan
+            scoreDisplay.textContent = `Skor: ${score}`;
+            updateHearts();
+            
+            // Sembunyikan layar awal, tampilkan layar game
+            coverScreen.style.display = 'none';
+            gameOverScreen.style.display = 'none';
+            gameScreen.style.display = 'flex';
+            
+            // Bersihkan objek jatuh yang ada
+            document.querySelectorAll('.falling-object').forEach(obj => obj.remove());
+            
+            // Mulai spawn objek
+            spawnInterval = setInterval(spawnObject, gameSpeed);
+            
+            // Mulai musik
+            bgm.play();
         }
-        getFrame(){
-          const t=now()-this.spawnTime;
-          if(t<150) return {img:this.idleImg,sx:0,sy:0,sw:this.idleImg.naturalWidth,sh:this.idleImg.naturalHeight};
-          const frame=Math.floor((t-150)/(1000/this.flipFPS))%this.flipCols;
-          const sw=this.flipImg.naturalWidth/this.flipCols, sh=this.flipImg.naturalHeight;
-          return {img:this.flipImg,sx:frame*sw,sy:0,sw,sh};
-        }
-        update(dt){
-          this.y+=this.vy*dt;
-          if(this.y-this.r>LOGICAL_H){
-            this.alive=false;
-            if(this.type === 'coin') {
-              lives=Math.max(0,lives-1);
+        
+        // Fungsi untuk menghentikan game
+        function stopGame() {
+            gameActive = false;
+            clearInterval(spawnInterval);
+            
+            // Hentikan semua animasi objek
+            fallingObjects.forEach(obj => {
+                if (obj.animationId) {
+                    cancelAnimationFrame(obj.animationId);
+                }
+            });
+            
+            // Tampilkan layar game over
+            gameScreen.style.display = 'none';
+            gameOverScreen.style.display = 'flex';
+            
+            // Tampilkan skor akhir dan kategori
+            finalScoreDisplay.textContent = score;
+            
+            if (score <= 30) {
+                categoryDisplay.textContent = "Bad People";
+            } else if (score <= 60) {
+                categoryDisplay.textContent = "Good People";
+            } else {
+                categoryDisplay.textContent = "Amazing People";
             }
-          }
         }
-        draw(){ const f=this.getFrame(); const size=128; ctx.drawImage(f.img,f.sx,f.sy,f.sw,f.sh,this.x-size/2,this.y-size/2,size,size); }
-        contains(px,py){ const dx=px-this.x, dy=py-this.y; return dx*dx+dy*dy<=this.r*this.r; }
-      }
-
-      let state=STATES.COVER, startBtn, tryBtn, exitBtn;
-      let objects=[], score=0, lives=START_LIVES, timer=0;
-      let lastTs=0, spawnAccum=0, spawnRate=0.9, speed=320, running=false;
-
-      function resetGame(){
-        objects=[]; score=0; lives=START_LIVES; timer=0;
-        spawnAccum=0; spawnRate=0.9; speed=320; lastTs=now(); running=true;
-        try{ bgm.currentTime=0; bgm.play(); }catch{}
-      }
-      function stopMusic(){ try{ bgm.pause(); }catch{} }
-
-      function localPoint(ev){
-        const r=canvas.getBoundingClientRect();
-        const sx=LOGICAL_W/r.width, sy=LOGICAL_H/r.height;
-        const c = ev.touches? ev.touches[0] : ev;
-        return { x:(c.clientX-r.left)*sx, y:(c.clientY-r.top)*sy };
-      }
-
-      function setHoverState(p){
-  // reset dulu
-  if(startBtn) startBtn.hover=false;
-  if(tryBtn)   tryBtn.hover=false;
-  if(exitBtn)  exitBtn.hover=false;
-
-  if(state===STATES.COVER && startBtn){
-    startBtn.hover = startBtn.hit(p.x,p.y);
-  } else if(state===STATES.GAMEOVER){
-    if(tryBtn)  tryBtn.hover  = tryBtn.hit(p.x,p.y);
-    if(exitBtn) exitBtn.hover = exitBtn.hit(p.x,p.y);
-  }
-}
-function onPointerMove(ev){
-  const p=localPoint(ev);
-  setHoverState(p);
-}
-
-      function onPointerDown(ev){
-        const p=localPoint(ev);
-        if(state===STATES.COVER){
-          if(startBtn && startBtn.hit(p.x,p.y)){ state=STATES.PLAY; resetGame(); ev.preventDefault(); return; }
-        }else if(state===STATES.PLAY){
-          for(let i=objects.length-1;i>=0;i--){
-            const o=objects[i];
-            if(o.contains(p.x,p.y)){
-              if(o.type==='coin'){ score+=1; } else { lives=Math.max(0,lives-1); }
-              o.alive=false;
-              if(lives<=0){ state=STATES.GAMEOVER; running=false; stopMusic(); }
-              ev.preventDefault(); return;
+        
+        // Fungsi untuk menghasilkan objek jatuh (koin atau bom)
+        function spawnObject() {
+            if (!gameActive) return;
+            
+            const isCoin = Math.random() > 0.3; // 70% koin, 30% bom
+            const objectType = isCoin ? 'coin' : 'bomb';
+            const objectSize = isCoin ? 60 : 70;
+            
+            // Buat elemen objek
+            const object = document.createElement('div');
+            object.className = `falling-object ${objectType}`;
+            object.id = `object-${objectId}`;
+            object.style.width = `${objectSize}px`;
+            object.style.height = `${objectSize}px`;
+            object.style.left = `${Math.random() * (window.innerWidth - objectSize)}px`;
+            object.style.top = `-${objectSize}px`;
+            
+            // Tambahkan ke game screen
+            gameScreen.appendChild(object);
+            
+            // Data objek
+            const objData = {
+                id: objectId,
+                element: object,
+                type: objectType,
+                top: -objectSize,
+                speed: 2 + Math.random() * 2,
+                animationId: null
+            };
+            
+            fallingObjects.push(objData);
+            
+            // Animasi jatuh
+            function fall() {
+                if (!gameActive) return;
+                
+                objData.top += objData.speed;
+                object.style.top = `${objData.top}px`;
+                
+                // Cek jika objek mencapai bawah
+                if (objData.top > window.innerHeight) {
+                    // Jika koin jatuh ke bawah, kurangi nyawa
+                    if (objData.type === 'coin') {
+                        loseLife();
+                    }
+                    
+                    // Hapus objek
+                    removeObject(objData.id);
+                    return;
+                }
+                
+                objData.animationId = requestAnimationFrame(fall);
             }
-          }
-        }else if(state===STATES.GAMEOVER){
-          if(tryBtn && tryBtn.hit(p.x,p.y)){ state=STATES.PLAY; resetGame(); ev.preventDefault(); return; }
-          if(exitBtn && exitBtn.hit(p.x,p.y)){
-            // Perbaikan: Kembali ke halaman awal
-            window.location.href = window.location.origin + window.location.pathname;
-            ev.preventDefault(); return;
-          }
-        }
-      }
-      canvas.addEventListener('pointerdown', onPointerDown, {passive:false});
-      canvas.addEventListener('touchstart', onPointerDown, {passive:false});
-
-      function spawnOne(){
-        const margin=64, x=rand(margin, LOGICAL_W-margin);
-        const type=(Math.random()<0.8)?'coin':'bomb';
-        const obj=new Falling(type,x,rand(speed*0.9,speed*1.2));
-        objects.push(obj);
-      }
-
-      function updatePlay(dt){
-        speed += dt*6;
-        spawnRate = Math.max(0.4, spawnRate - dt*0.01);
-        timer += dt;
-        
-        spawnAccum += dt;
-        while(spawnAccum>=spawnRate){ spawnAccum-=spawnRate; spawnOne(); }
-
-        for(const o of objects) o.update(dt);
-        objects = objects.filter(o=>o.alive && o.y - o.r <= LOGICAL_H+2);
-
-        if(lives<=0){ state=STATES.GAMEOVER; running=false; stopMusic(); }
-      }
-
-      function drawCover(){
-        const bg=images.cover;
-        const s=Math.max(LOGICAL_W/bg.naturalWidth, LOGICAL_H/bg.naturalHeight);
-        const w=bg.naturalWidth*s, h=bg.naturalHeight*s;
-        ctx.drawImage(bg,(LOGICAL_W-w)/2,(LOGICAL_H-h)/2,w,h);
-
-        if(!startBtn){
-  startBtn=new ImageButton(images.startBtn, LOGICAL_W/2, LOGICAL_H*0.8);
-  startBtn.setScale(Math.min(520, LOGICAL_W*0.7)/images.startBtn.naturalWidth);
-}
-startBtn.update(dt);
-startBtn.draw();
-
-      function drawHUD(){
-        ctx.save();
-        ctx.font="bold 36px system-ui,-apple-system,Segoe UI,Roboto";
-        ctx.textAlign="right";
-        ctx.fillStyle="#000a"; ctx.fillRect(LOGICAL_W-240,20,220,80);
-        ctx.fillStyle="#fff"; ctx.fillText(`$ RIALO: ${score}`, LOGICAL_W-30, 60);
-        
-        const r=14,g=10,sx=LOGICAL_W-200,sy=90;
-        for(let i=0;i<START_LIVES;i++){
-          ctx.beginPath(); ctx.arc(sx+i*(r*2+g), sy, r, 0, Math.PI*2);
-          ctx.fillStyle = (i<lives) ? "#ff4040" : "#444"; ctx.fill();
+            
+            fall();
+            
+            // Event listener untuk klik objek
+            object.addEventListener('click', () => {
+                if (objData.type === 'coin') {
+                    // Koin diklik, tambah skor
+                    score++;
+                    scoreDisplay.textContent = `Skor: ${score}`;
+                    
+                    // Tambah animasi flip
+                    object.style.backgroundImage = "url('flip-coin.png')";
+                    setTimeout(() => {
+                        if (object.parentNode) {
+                            object.parentNode.removeChild(object);
+                        }
+                    }, 200);
+                } else {
+                    // Bom diklik, kurangi nyawa
+                    loseLife();
+                    
+                    // Tambah animasi ledakan
+                    object.style.backgroundImage = "url('flip-bomb.png')";
+                    setTimeout(() => {
+                        if (object.parentNode) {
+                            object.parentNode.removeChild(object);
+                        }
+                    }, 200);
+                }
+                
+                // Hapus dari array
+                removeObject(objData.id);
+            });
+            
+            objectId++;
+            
+            // Tingkatkan kesulitan seiring waktu
+            if (score > 0 && score % 10 === 0 && gameSpeed > 500) {
+                gameSpeed -= 100;
+                clearInterval(spawnInterval);
+                spawnInterval = setInterval(spawnObject, gameSpeed);
+            }
         }
         
-        ctx.textAlign="center";
-        ctx.fillStyle="#000a"; ctx.fillRect(LOGICAL_W/2-110,20,220,64);
-        ctx.fillStyle="#fff"; ctx.font="bold 44px system-ui,-apple-system,Segoe UI,Roboto";
-        ctx.fillText(`${Math.floor(timer)}s`, LOGICAL_W/2, 68);
-        ctx.restore();
-      }
-
-      function drawPlay(){
-        const bg=images.bg;
-        const s=Math.max(LOGICAL_W/bg.naturalWidth, LOGICAL_H/bg.naturalHeight);
-        const w=bg.naturalWidth*s, h=bg.naturalHeight*s;
-        ctx.drawImage(bg,(LOGICAL_W-w)/2,(LOGICAL_H-h)/2,w,h);
-        for(const o of objects) o.draw();
-        drawHUD();
-      }
-
-      function drawGameOver(){
-        drawPlay();
-        ctx.fillStyle="rgba(0,0,0,0.55)"; ctx.fillRect(0,0,LOGICAL_W,LOGICAL_H);
-
-        const pw=540, ph=420, px=(LOGICAL_W-pw)/2, py=(LOGICAL_H-ph)/2;
-        ctx.fillStyle="#12161c"; ctx.strokeStyle="#ffffff22"; ctx.lineWidth=2;
-        ctx.fillRect(px,py,pw,ph); ctx.strokeRect(px,py,pw,ph);
-        ctx.fillStyle="#fff"; ctx.textAlign="center";
-        ctx.font="700 54px system-ui,-apple-system,Segoe UI,Roboto";
-        ctx.fillText("Game Over", LOGICAL_W/2, py+80);
-        ctx.font="700 36px system-ui,-apple-system,Segoe UI,Roboto";
-        ctx.fillText(`$ RIALO terkumpul: ${score}`, LOGICAL_W/2, py+140);
-
-        if(!tryBtn){
-  tryBtn=new ImageButton(images.tryBtn, LOGICAL_W/2, LOGICAL_H/2+40);
-  tryBtn.setScale(Math.min(520, LOGICAL_W*0.70)/images.tryBtn.naturalWidth);
-}
-tryBtn.update(dt);
-tryBtn.draw();
-
-if(!exitBtn){
-  exitBtn=new ImageButton(images.exitBtn, LOGICAL_W/2, LOGICAL_H/2+220);
-  exitBtn.setScale(Math.min(420, LOGICAL_W*0.56)/images.exitBtn.naturalWidth);
-}
-exitBtn.update(dt);
-exitBtn.draw();
-
-      function tick(){
-        requestAnimationFrame(tick);
-        const t=now(); if(!lastTs) lastTs=t;
-        const dt=Math.min(0.05,(t-lastTs)/1000); lastTs=t;
-
-        if(state===STATES.COVER) {
-  drawCover(dt);
-}
-else if(state===STATES.PLAY) {
-  if(running) updatePlay(dt);
-  drawPlay();
-}
-else if(state===STATES.GAMEOVER) {
-  drawGameOver(dt);
-}
-      (async function start(){
-        fitCanvas();
-        await preload();
-        lastTs=now(); tick();
-      })();
-    })();
-  </script>
+        // Fungsi untuk menghapus objek
+        function removeObject(id) {
+            const index = fallingObjects.findIndex(obj => obj.id === id);
+            if (index !== -1) {
+                if (fallingObjects[index].animationId) {
+                    cancelAnimationFrame(fallingObjects[index].animationId);
+                }
+                fallingObjects.splice(index, 1);
+            }
+        }
+        
+        // Fungsi untuk mengurangi nyawa
+        function loseLife() {
+            lives--;
+            updateHearts();
+            
+            if (lives <= 0) {
+                stopGame();
+            }
+        }
+        
+        // Fungsi untuk memperbarui tampilan nyawa
+        function updateHearts() {
+            heartsContainer.innerHTML = '';
+            for (let i = 0; i < lives; i++) {
+                const heart = document.createElement('div');
+                heart.className = 'heart';
+                heartsContainer.appendChild(heart);
+            }
+        }
+        
+        // Event listeners
+        btnStart.addEventListener('click', startGame);
+        
+        btnTryAgain.addEventListener('click', startGame);
+        
+        btnExit.addEventListener('click', () => {
+            gameOverScreen.style.display = 'none';
+            coverScreen.style.display = 'flex';
+        });
+        
+        // Auto play musik (dengan penanganan autoplay policy)
+        document.addEventListener('click', function initAudio() {
+            bgm.play().catch(e => {
+                console.log("Autoplay prevented, user interaction required");
+            });
+            document.removeEventListener('click', initAudio);
+        });
+        
+        // Penanganan resize window
+        window.addEventListener('resize', () => {
+            // Sesuaikan posisi objek jatuh saat window diresize
+            fallingObjects.forEach(obj => {
+                if (obj.element.parentNode) {
+                    const currentLeft = parseFloat(obj.element.style.left);
+                    const maxLeft = window.innerWidth - obj.element.offsetWidth;
+                    obj.element.style.left = `${Math.min(currentLeft, maxLeft)}px`;
+                }
+            });
+        });
+    </script>
 </body>
 </html>
