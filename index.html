@@ -110,6 +110,8 @@
             background-repeat: no-repeat;
             background-position: center;
             z-index: 7;
+            cursor: pointer;
+            transition: transform 0.3s;
         }
 
         .coin {
@@ -125,8 +127,43 @@
         }
 
         @keyframes flip {
-            0% { transform: scaleX(1); }
-            100% { transform: scaleX(-1); }
+            0% { 
+                transform: rotateY(0deg);
+                background-image: url('coin.png');
+            }
+            49% {
+                background-image: url('coin.png');
+            }
+            50% { 
+                transform: rotateY(90deg);
+                background-image: url('flip-coin.png');
+            }
+            100% { 
+                transform: rotateY(0deg);
+                background-image: url('flip-coin.png');
+            }
+        }
+
+        .bomb.flipping {
+            animation: flipBomb 0.5s infinite alternate;
+        }
+
+        @keyframes flipBomb {
+            0% { 
+                transform: rotateY(0deg);
+                background-image: url('bomb.png');
+            }
+            49% {
+                background-image: url('bomb.png');
+            }
+            50% { 
+                transform: rotateY(90deg);
+                background-image: url('flip-bomb.png');
+            }
+            100% { 
+                transform: rotateY(0deg);
+                background-image: url('flip-bomb.png');
+            }
         }
 
         .powered-by {
@@ -152,6 +189,17 @@
             font-size: 36px;
             margin-bottom: 40px;
             color: white;
+        }
+
+        /* Efek klik/ketuk pada objek game */
+        .tapped {
+            animation: tapEffect 0.2s;
+        }
+
+        @keyframes tapEffect {
+            0% { transform: scale(1); }
+            50% { transform: scale(0.9); }
+            100% { transform: scale(1); }
         }
     </style>
 </head>
@@ -235,9 +283,6 @@
             isGameRunning = true;
             gameInterval = setInterval(updateGame, 50);
             objectInterval = setInterval(createObject, gameSpeed);
-            
-            // Tambahkan event listener untuk touch
-            gameScreen.addEventListener('touchstart', handleTouch);
         }
 
         // Fungsi untuk membuat objek (coin atau bomb)
@@ -258,12 +303,7 @@
             object.style.left = `${Math.random() * maxX}px`;
             object.style.top = `-${size}px`;
             
-            // Tambahkan animasi flip untuk coin dan bomb
-            if (objectType === 'coin') {
-                object.style.backgroundImage = "url('flip-coin.png')";
-            } else {
-                object.style.backgroundImage = "url('flip-bomb.png')";
-            }
+            // Tambahkan animasi flip
             object.classList.add('flipping');
             
             // Simpan data objek
@@ -305,23 +345,41 @@
             }
         }
 
-        // Fungsi untuk menangani sentuhan
-        function handleTouch(e) {
+        // Fungsi untuk menangani input (mouse dan touch)
+        function handleInput(e) {
             if (!isGameRunning) return;
             
-            const touch = e.touches[0];
-            const touchX = touch.clientX;
-            const touchY = touch.clientY;
+            // Dapatkan koordinat input
+            let clientX, clientY;
             
+            if (e.type === 'touchstart' || e.type === 'touchend') {
+                // Untuk event touch
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
+            } else {
+                // Untuk event mouse
+                clientX = e.clientX;
+                clientY = e.clientY;
+            }
+            
+            // Cek setiap objek game
             for (let i = gameObjects.length - 1; i >= 0; i--) {
                 const obj = gameObjects[i];
                 if (!obj.isActive) continue;
                 
                 const rect = obj.element.getBoundingClientRect();
                 
-                // Cek jika sentuhan mengenai objek
-                if (touchX >= rect.left && touchX <= rect.right &&
-                    touchY >= rect.top && touchY <= rect.bottom) {
+                // Cek jika input mengenai objek
+                if (clientX >= rect.left && clientX <= rect.right &&
+                    clientY >= rect.top && clientY <= rect.bottom) {
+                    
+                    // Tambah efek visual ketika objek diklik/diketuk
+                    obj.element.classList.add('tapped');
+                    setTimeout(() => {
+                        if (obj.element.parentNode) {
+                            obj.element.classList.remove('tapped');
+                        }
+                    }, 200);
                     
                     obj.isActive = false;
                     gameScreen.removeChild(obj.element);
@@ -336,7 +394,7 @@
                         loseLife();
                     }
                     
-                    break; // Hanya tangani satu objek per sentuhan
+                    break; // Hanya tangani satu objek per input
                 }
             }
         }
@@ -369,18 +427,29 @@
             bgm.currentTime = 0;
         }
 
-        // Event Listeners
+        // Event Listeners untuk input game
+        gameScreen.addEventListener('click', handleInput);
+        gameScreen.addEventListener('touchstart', handleInput);
+
+        // Event Listeners untuk tombol
         btnStart.addEventListener('click', startGame);
-        btnStart.addEventListener('touchstart', startGame);
+        btnStart.addEventListener('touchstart', function(e) {
+            e.preventDefault(); // Mencegah event ganda pada perangkat touch
+            startGame();
+        });
         
         btnTryAgain.addEventListener('click', startGame);
-        btnTryAgain.addEventListener('touchstart', startGame);
+        btnTryAgain.addEventListener('touchstart', function(e) {
+            e.preventDefault();
+            startGame();
+        });
         
         btnExit.addEventListener('click', function() {
             gameOverScreen.style.display = 'none';
             startScreen.style.display = 'flex';
         });
-        btnExit.addEventListener('touchstart', function() {
+        btnExit.addEventListener('touchstart', function(e) {
+            e.preventDefault();
             gameOverScreen.style.display = 'none';
             startScreen.style.display = 'flex';
         });
@@ -391,6 +460,15 @@
                 e.preventDefault();
             }
         }, { passive: false });
+
+        let lastTouchEnd = 0;
+        document.addEventListener('touchend', function(e) {
+            const now = (new Date()).getTime();
+            if (now - lastTouchEnd <= 300) {
+                e.preventDefault();
+            }
+            lastTouchEnd = now;
+        }, false);
 
         // Event untuk mencegah konteks menu pada long press
         document.addEventListener('contextmenu', function(e) {
@@ -423,6 +501,25 @@
                 };
                 img.src = src;
             });
+        });
+
+        // Responsif terhadap perubahan ukuran layar
+        window.addEventListener('resize', function() {
+            // Jika game sedang berjalan, sesuaikan posisi objek
+            if (isGameRunning) {
+                for (let i = 0; i < gameObjects.length; i++) {
+                    const obj = gameObjects[i];
+                    if (obj.isActive) {
+                        const rect = obj.element.getBoundingClientRect();
+                        const maxX = window.innerWidth - rect.width;
+                        
+                        // Pastikan objek tidak keluar dari batas layar
+                        if (rect.left > maxX) {
+                            obj.element.style.left = `${maxX}px`;
+                        }
+                    }
+                }
+            }
         });
     </script>
 </body>
