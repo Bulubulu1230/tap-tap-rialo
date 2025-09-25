@@ -3,74 +3,81 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Coin Clicker – Rialo</title>
+  <title>Tap-Tap Rialo</title>
   <style>
     :root{ --logical-w:720; --logical-h:1280; --fg:#e7edf5; }
-    *{box-sizing:border-box; touch-action:manipulation;}
-    html,body{height:100%; margin:0; background:#000; color:var(--fg); font-family:system-ui,Segoe UI,Roboto,Arial;}
+    *{ box-sizing:border-box; touch-action:manipulation; }
+    html,body{ height:100%; margin:0; background:#000; color:var(--fg); font-family:system-ui,Segoe UI,Roboto,Arial; }
     #game-wrap{ position:fixed; inset:0; display:grid; place-items:center; background:#000; overflow:hidden; user-select:none; -webkit-user-select:none; }
     canvas{
       width:min(100vw, calc(100vh * (var(--logical-w)/var(--logical-h))));
       height:calc(var(--logical-h) * ( (min(100vw, calc(100vh * (var(--logical-w)/var(--logical-h)))))/var(--logical-w) ));
       image-rendering:pixelated; image-rendering:crisp-edges;
     }
-    .hint{position:fixed;left:8px;bottom:8px;font-size:12px;opacity:.6;pointer-events:none;}
+    .hint{ position:fixed; left:8px; bottom:8px; font-size:12px; opacity:.6; pointer-events:none; }
+    /* Overlay error supaya kelihatan kalau ada masalah skrip */
+    #err{
+      position:fixed; inset:auto 8px 8px 8px; background:#1a1a1acc; color:#fff; padding:8px 12px; border:1px solid #ff6;
+      font:12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; display:none; white-space:pre-wrap;
+      max-height:35vh; overflow:auto; border-radius:8px;
+    }
   </style>
 </head>
 <body>
   <div id="game-wrap"><canvas id="game" width="720" height="1280"></canvas></div>
-  <div class="hint">Klik/ketuk koin untuk poin • Jangan klik bom!</div>
+  <div class="hint">Tap koin untuk skor • Jangan tap bom!</div>
+  <div id="err"></div>
 
-  <!-- Musik game: autoplay (muted) -> unmute saat tekan START -->
+  <!-- Musik game: autoplay (muted) -> unmute saat START -->
   <audio id="bgm" src="bgm.mp3" preload="auto" loop autoplay muted></audio>
 
   <script>
+  // ======== Overlay error agar tidak "blank" ========
+  const errBox = document.getElementById('err');
+  function showError(msg){
+    errBox.style.display = 'block';
+    errBox.textContent = 'ERROR: ' + msg;
+  }
+  window.addEventListener('error', e => showError(e.message || String(e)));
+  window.addEventListener('unhandledrejection', e => showError((e.reason && e.reason.message) || String(e.reason)));
+
   // =======================
-  //  KONFIGURASI & ASET
+  //  KONFIG & ASET (ROOT)
   // =======================
   const LOGICAL_W = 720, LOGICAL_H = 1280;
-
   const ASSET_PATHS = {
     coverBg:   'cover-bg.png',
     gameBg:    'bg-game.png',
     startBtn:  'btn-start.png',
     tryBtn:    'btn-tryagain.png',
     exitBtn:   'btn-exit.png',
-    coin:      'coin.png',        // fallback (tidak dipakai jika flip tersedia)
-    bomb:      'bomb.png',        // fallback
-    flipCoin:  'flip-coin.png',   // sprite strip koin
-    flipBomb:  'flip-bomb.png'    // sprite strip bom
+    coin:      'coin.png',       // fallback
+    bomb:      'bomb.png',       // fallback
+    flipCoin:  'flip-coin.png',  // sprite strip
+    flipBomb:  'flip-bomb.png'   // sprite strip
   };
+  const COIN_FRAMES = 3, BOMB_FRAMES = 3; // ganti kalau frame berbeda
+  const COIN_FPS = 12, BOMB_FPS = 10;
 
-  // Ubah sesuai jumlah frame sprite Anda
-  const COIN_FRAMES = 3;
-  const BOMB_FRAMES = 3;
-  const COIN_FPS = 12;
-  const BOMB_FPS = 10;
-
-  // Gameplay
   const STATES = { COVER:0, PLAY:1, GAMEOVER:2 };
-  const COIN_PROB = 0.72;     // peluang spawn koin vs bom
-  const SPAWN_EVERY = 700;    // ms
-  const SPEED_MIN = 240;      // px/detik
-  const SPEED_MAX = 580;      // px/detik
-  const OBJ_RADIUS = 56;      // radius klik
-  const LIVES_MAX = 3;
-  const DRAW_SIZE = 128;      // ukuran gambar di kanvas
+  const COIN_PROB = 0.72, SPAWN_EVERY = 700;     // ms
+  const SPEED_MIN = 240, SPEED_MAX = 580;        // px/detik
+  const OBJ_RADIUS = 56, LIVES_MAX = 3;
+  const DRAW_SIZE = 128;
 
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
   const bgm = document.getElementById('bgm');
 
   // =======================
-  //  MUAT GAMBAR
+  //  MUAT GAMBAR (tahan error)
   // =======================
   const IM = {};
   function loadImage(key, src){
-    return new Promise((resolve,reject)=>{
+    return new Promise((resolve)=>{
       const img = new Image();
-      img.onload = ()=>{ IM[key]=img; resolve(); };
-      img.onerror = (e)=>reject(e);
+      img.onload = ()=>{ IM[key]=img; resolve({ok:true}); };
+      img.onerror = ()=>{ console.warn('Gagal load', src); resolve({ok:false}); };
       img.src = src;
     });
   }
@@ -78,13 +85,9 @@
   // =======================
   //  STATE
   // =======================
-  let state = STATES.COVER;
-  let score = 0;
-  let lives = LIVES_MAX;
+  let state = STATES.COVER, score = 0, lives = LIVES_MAX;
   let objects = []; // {x,y,vy,type,img,frames,fps,fw,fh,frame,ft}
-  let lastTime = 0;
-  let spawnAcc = 0;
-
+  let lastTime = 0, spawnAcc = 0;
   const buttons = {
     start:{x: LOGICAL_W/2 - 140, y: LOGICAL_H - 220, w: 280, h: 120, hover:false},
     try:  {x: LOGICAL_W/2 - 300, y: LOGICAL_H/2 + 160, w: 260, h: 110, hover:false},
@@ -94,9 +97,9 @@
   // =======================
   //  UTIL & INPUT
   // =======================
-  function rand(min,max){ return Math.random()*(max-min)+min; }
-  function pointInRect(px,py,r){ return (px>=r.x && px<=r.x+r.w && py>=r.y && py<=r.y+r.h); }
-  function dist2(ax,ay,bx,by){ const dx=ax-bx, dy=ay-by; return dx*dx+dy*dy; }
+  const rand=(a,b)=>Math.random()*(b-a)+a;
+  const pointInRect=(x,y,r)=>x>=r.x && x<=r.x+r.w && y>=r.y && y<=r.y+r.h;
+  const dist2=(ax,ay,bx,by)=>{const dx=ax-bx,dy=ay-by;return dx*dx+dy*dy;};
 
   function localPoint(ev){
     const rect = canvas.getBoundingClientRect();
@@ -105,42 +108,36 @@
     return { x:(c.clientX-rect.left)*sx, y:(c.clientY-rect.top)*sy };
   }
 
-  canvas.addEventListener('mousemove', (ev)=>{
+  canvas.addEventListener('mousemove', ev=>{
     const p = localPoint(ev);
     if(state===STATES.COVER){
       buttons.start.hover = pointInRect(p.x,p.y,buttons.start);
     }else if(state===STATES.GAMEOVER){
-      buttons.try.hover = pointInRect(p.x,p.y,buttons.try);
+      buttons.try.hover  = pointInRect(p.x,p.y,buttons.try);
       buttons.exit.hover = pointInRect(p.x,p.y,buttons.exit);
     }
   });
-
   canvas.addEventListener('mousedown', onPress);
   canvas.addEventListener('touchstart', onPress, {passive:false});
+
   function onPress(ev){
     ev.preventDefault();
     const p = localPoint(ev);
 
-    if(state===STATES.COVER){
-      if(pointInRect(p.x,p.y,buttons.start)){
-        // Musik game: unmute & play setelah interaksi pengguna
-        bgm.muted = false;
-        bgm.play().catch(()=>{});
-        startGame();
-        return;
-      }
+    if(state===STATES.COVER && pointInRect(p.x,p.y,buttons.start)){
+      bgm.muted = false; bgm.play().catch(()=>{});
+      startGame(); return;
     }
 
     if(state===STATES.PLAY){
       let hit=-1;
       for(let i=objects.length-1;i>=0;i--){
-        const o = objects[i];
-        if(dist2(p.x,p.y,o.x,o.y) <= (OBJ_RADIUS*OBJ_RADIUS)){ hit=i; break; }
+        const o=objects[i];
+        if(dist2(p.x,p.y,o.x,o.y)<=OBJ_RADIUS*OBJ_RADIUS){ hit=i; break; }
       }
       if(hit>=0){
-        const o = objects[hit];
-        if(o.type==='coin'){ score++; }
-        else{ lives--; screenShake(6,150); }
+        const o=objects[hit];
+        if(o.type==='coin') score++; else { lives--; screenShake(6,150); }
         objects.splice(hit,1);
         if(lives<=0) toGameOver();
       }
@@ -166,19 +163,17 @@
   function spawnObject(){
     const isCoin = Math.random() < COIN_PROB;
     const type   = isCoin ? 'coin' : 'bomb';
-    const x = rand(60, LOGICAL_W-60);
-    const y = -80;
-    const vy = rand(SPEED_MIN, SPEED_MAX);
+    const x = rand(60, LOGICAL_W-60), y = -80, vy = rand(SPEED_MIN, SPEED_MAX);
 
     let img, frames, fps;
-    if(isCoin && IM.flipCoin){ img = IM.flipCoin; frames = COIN_FRAMES; fps = COIN_FPS; }
-    else if(!isCoin && IM.flipBomb){ img = IM.flipBomb; frames = BOMB_FRAMES; fps = BOMB_FPS; }
-    else { img = isCoin ? IM.coin : IM.bomb; frames = 1; fps = 1; }
+    if(isCoin && IM.flipCoin){ img=IM.flipCoin; frames=COIN_FRAMES; fps=COIN_FPS; }
+    else if(!isCoin && IM.flipBomb){ img=IM.flipBomb; frames=BOMB_FRAMES; fps=BOMB_FPS; }
+    else { img=isCoin?IM.coin:IM.bomb; frames=1; fps=1; }
 
-    const fw = img ? Math.floor(img.naturalWidth / frames) : DRAW_SIZE;
+    const fw = img ? Math.floor(img.naturalWidth/frames) : DRAW_SIZE;
     const fh = img ? img.naturalHeight : DRAW_SIZE;
 
-    objects.push({ x,y,vy,type,img,frames,fps, fw,fh, frame:0, ft:0 });
+    objects.push({x,y,vy,type,img,frames,fps,fw,fh,frame:0,ft:0});
   }
 
   let shakeMag=0, shakeTime=0;
@@ -187,46 +182,45 @@
   function update(dt){
     if(state!==STATES.PLAY) return;
 
-    // spawn periodik
     spawnAcc += dt*1000;
     while(spawnAcc >= SPAWN_EVERY){ spawnObject(); spawnAcc -= SPAWN_EVERY; }
 
-    // gerak + anim
     for(let i=objects.length-1;i>=0;i--){
-      const o = objects[i];
-      o.y += o.vy * dt;
+      const o=objects[i];
+      o.y += o.vy*dt;
 
       if(o.frames>1){
         o.ft += dt;
         const dur = 1/o.fps;
-        while(o.ft >= dur){ o.ft -= dur; o.frame = (o.frame+1) % o.frames; }
+        while(o.ft >= dur){ o.ft -= dur; o.frame = (o.frame+1)%o.frames; }
       }
 
-      // lewati bawah layar
       if(o.y - OBJ_RADIUS > LOGICAL_H){
         if(o.type==='coin'){ lives--; if(lives<=0){ objects.splice(i,1); toGameOver(); break; } }
         objects.splice(i,1);
       }
     }
 
-    if(shakeTime>0){ shakeTime -= dt*1000; if(shakeTime<=0) shakeMag=0; }
+    if(shakeTime>0){ shakeTime-=dt*1000; if(shakeTime<=0) shakeMag=0; }
   }
 
   // =======================
-  //  RENDER
+  //  DRAW
   // =======================
   function drawCover(){
     if(IM.coverBg) ctx.drawImage(IM.coverBg,0,0,LOGICAL_W,LOGICAL_H);
-    else{ ctx.fillStyle='#091219'; ctx.fillRect(0,0,LOGICAL_W,LOGICAL_H); }
+    else { ctx.fillStyle='#091219'; ctx.fillRect(0,0,LOGICAL_W,LOGICAL_H); }
 
+    // Judul
     ctx.fillStyle='rgba(0,0,0,.45)'; ctx.fillRect(0,0,LOGICAL_W,140);
-    ctx.fillStyle='#fff'; ctx.font='bold 48px system-ui'; ctx.textAlign='center';
-    ctx.fillText('Coin Clicker', LOGICAL_W/2, 88);
+    ctx.fillStyle='#fff'; ctx.font='bold 48px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('Tap-Tap Rialo', LOGICAL_W/2, 80);
 
+    // Tombol START (fallback kotak kalau PNG belum ada)
     const b=buttons.start;
     if(IM.startBtn) ctx.drawImage(IM.startBtn, b.x,b.y,b.w,b.h);
     else{ ctx.fillStyle='#2b8a3e'; ctx.fillRect(b.x,b.y,b.w,b.h);
-          ctx.fillStyle='#fff'; ctx.font='bold 40px system-ui'; ctx.fillText('START', b.x+b.w/2, b.y+b.h/2+14); }
+          ctx.fillStyle='#fff'; ctx.font='bold 40px system-ui'; ctx.fillText('START', b.x+b.w/2, b.y+b.h/2); }
 
     ctx.fillStyle='rgba(255,255,255,.9)'; ctx.font='24px system-ui';
     ctx.fillText('Tekan START untuk memulai (musik aktif)', LOGICAL_W/2, b.y+b.h+34);
@@ -234,7 +228,7 @@
 
   function drawPlay(){
     if(IM.gameBg) ctx.drawImage(IM.gameBg,0,0,LOGICAL_W,LOGICAL_H);
-    else{ ctx.fillStyle='#0b0e12'; ctx.fillRect(0,0,LOGICAL_W,LOGICAL_H); }
+    else { ctx.fillStyle='#0b0e12'; ctx.fillRect(0,0,LOGICAL_W,LOGICAL_H); }
 
     for(const o of objects){
       const img=o.img;
@@ -244,19 +238,17 @@
         ctx.drawImage(img, sx,sy,sw,sh, Math.round(o.x-dw/2), Math.round(o.y-dh/2), dw,dh);
       }else if(img){
         const dw=DRAW_SIZE, dh=DRAW_SIZE;
-        ctx.drawImage(img, 0,0, img.naturalWidth, img.naturalHeight, Math.round(o.x-dw/2), Math.round(o.y-dh/2), dw, dh);
+        ctx.drawImage(img, 0,0, img.naturalWidth, img.naturalHeight, Math.round(o.x-dw/2), Math.round(o.y-dh/2), dw,dh);
       }else{
-        ctx.fillStyle = (o.type==='coin')? '#ffd24a' : '#ff5151';
+        ctx.fillStyle=(o.type==='coin')?'#ffd24a':'#ff5151';
         ctx.beginPath(); ctx.arc(o.x,o.y,OBJ_RADIUS,0,Math.PI*2); ctx.fill();
       }
     }
 
     // HUD
     ctx.fillStyle='rgba(0,0,0,.35)'; ctx.fillRect(0,0,LOGICAL_W,72);
-    ctx.fillStyle='#fff'; ctx.font='28px system-ui'; ctx.textAlign='left';
-    ctx.fillText('Skor: '+score, 18, 46);
-    ctx.textAlign='right';
-    ctx.fillStyle = lives>=2? '#aef1b8' : (lives===1? '#ffd24a' : '#ff9c9c');
+    ctx.fillStyle='#fff'; ctx.font='28px system-ui'; ctx.textAlign='left'; ctx.fillText('Skor: '+score, 18, 46);
+    ctx.textAlign='right'; ctx.fillStyle = lives>=2? '#aef1b8' : (lives===1? '#ffd24a' : '#ff9c9c');
     ctx.fillText('Nyawa: '+lives, LOGICAL_W-18, 46);
   }
 
@@ -272,34 +264,27 @@
     ctx.fillText(cat, LOGICAL_W/2, LOGICAL_H/2 - 30);
 
     const t=buttons.try, e=buttons.exit;
-    if(IM.tryBtn) ctx.drawImage(IM.tryBtn, t.x,t.y,t.w,t.h); else { ctx.fillStyle:'#3478f6'; ctx.fillRect(t.x,t.y,t.w,t.h); }
-    if(IM.exitBtn) ctx.drawImage(IM.exitBtn, e.x,e.y,e.w,e.h); else { ctx.fillStyle:'#ff5151'; ctx.fillRect(e.x,e.y,e.w,e.h); }
+    if(IM.tryBtn) ctx.drawImage(IM.tryBtn, t.x,t.y,t.w,t.h); else { ctx.fillStyle='#3478f6'; ctx.fillRect(t.x,t.y,t.w,t.h); }
+    if(IM.exitBtn) ctx.drawImage(IM.exitBtn, e.x,e.y,e.w,e.h); else { ctx.fillStyle='#ff5151'; ctx.fillRect(e.x,e.y,e.w,e.h); }
 
-    ctx.fillStyle='#fff'; ctx.font='24px system-ui';
-    ctx.fillText('Tap tombol untuk lanjut', LOGICAL_W/2, e.y+e.h+36);
+    ctx.fillStyle='#fff'; ctx.font='24px system-ui'; ctx.fillText('Tap tombol untuk lanjut', LOGICAL_W/2, e.y+e.h+36);
   }
 
   // =======================
-  //  GAME LOOP
+  //  LOOP
   // =======================
   let shakeMag=0, shakeTime=0;
   function loop(ts){
-    const dt = Math.min(0.033, (ts - (lastTime||ts)) / 1000); lastTime = ts;
-
-    let ox=0, oy=0;
-    if(shakeTime>0){
-      shakeTime -= dt*1000;
-      const mag = shakeTime>0 ? shakeMag : 0;
-      ox = (Math.random()*2-1)*mag; oy = (Math.random()*2-1)*mag;
-      if(shakeTime<=0) shakeMag=0;
-    }
-    ctx.save(); ctx.translate(ox,oy);
-
-    if(state===STATES.COVER) drawCover();
-    else if(state===STATES.PLAY){ update(dt); drawPlay(); }
-    else if(state===STATES.GAMEOVER) drawGameOver();
-
-    ctx.restore();
+    try{
+      const dt = Math.min(0.033, (ts - (lastTime||ts)) / 1000); lastTime = ts;
+      let ox=0, oy=0;
+      if(shakeTime>0){ shakeTime-=dt*1000; const m=shakeTime>0?shakeMag:0; ox=(Math.random()*2-1)*m; oy=(Math.random()*2-1)*m; if(shakeTime<=0) shakeMag=0; }
+      ctx.save(); ctx.translate(ox,oy);
+      if(state===STATES.COVER) drawCover();
+      else if(state===STATES.PLAY){ update(dt); drawPlay(); }
+      else if(state===STATES.GAMEOVER) drawGameOver();
+      ctx.restore();
+    }catch(e){ showError(e.message||String(e)); }
     requestAnimationFrame(loop);
   }
 
@@ -314,16 +299,12 @@
         loadImage('startBtn', ASSET_PATHS.startBtn),
         loadImage('tryBtn',   ASSET_PATHS.tryBtn),
         loadImage('exitBtn',  ASSET_PATHS.exitBtn),
-        // fallback statis
-        loadImage('coin',     ASSET_PATHS.coin).catch(()=>{}),
-        loadImage('bomb',     ASSET_PATHS.bomb).catch(()=>{}),
-        // sprite animasi
+        loadImage('coin',     ASSET_PATHS.coin),
+        loadImage('bomb',     ASSET_PATHS.bomb),
         loadImage('flipCoin', ASSET_PATHS.flipCoin),
         loadImage('flipBomb', ASSET_PATHS.flipBomb),
       ]);
-    }catch(e){
-      console.warn('Gagal memuat aset:', e);
-    }
+    }catch(e){ showError(e.message||String(e)); }
     toCover();
     requestAnimationFrame(loop);
   })();
