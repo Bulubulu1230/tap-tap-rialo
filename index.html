@@ -1,323 +1,429 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="id">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Tap-Tap Rialo</title>
-  <style>
-    :root{ --logical-w:720; --logical-h:1280; --fg:#e7edf5; }
-    *{ box-sizing:border-box; touch-action:manipulation; }
-    html,body{ height:100%; margin:0; background:#000; color:var(--fg);
-      font-family:system-ui,Segoe UI,Roboto,Arial; }
-    #game-wrap{ position:fixed; inset:0; display:grid; place-items:center; background:#000;
-      overflow:hidden; user-select:none; -webkit-user-select:none; }
-    canvas{
-      width:min(100vw, calc(100vh * (var(--logical-w)/var(--logical-h))));
-      height:calc(var(--logical-h) * ((min(100vw, calc(100vh * (var(--logical-w)/var(--logical-h)))))/var(--logical-w)));
-      image-rendering:pixelated; image-rendering:crisp-edges;
-    }
-    .hint{ position:fixed; left:8px; bottom:8px; font-size:12px; opacity:.6; pointer-events:none; }
-    #err{ position:fixed; inset:auto 8px 8px 8px; display:none; background:#111a; color:#fff;
-      border:1px solid #ff6; padding:8px 12px; font:12px ui-monospace,monospace; white-space:pre-wrap; border-radius:8px; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Coin Collector - Powered by Rialo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            touch-action: manipulation;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+            background-color: #000;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        .screen {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 0.5s;
+        }
+
+        #start-screen {
+            background-image: url('cover-bg.png');
+            background-size: cover;
+            background-position: center;
+            z-index: 10;
+        }
+
+        #game-screen {
+            background-image: url('bg-game.png');
+            background-size: cover;
+            background-position: center;
+            z-index: 5;
+            display: none;
+        }
+
+        #game-over-screen {
+            background-color: rgba(0, 0, 0, 0.8);
+            z-index: 15;
+            display: none;
+            color: white;
+            text-align: center;
+        }
+
+        .btn {
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin: 10px;
+        }
+
+        .btn:hover, .btn:active {
+            transform: scale(1.05);
+        }
+
+        #btn-start {
+            width: 200px;
+            height: auto;
+            margin-top: 50vh;
+        }
+
+        #btn-tryagain, #btn-exit {
+            width: 180px;
+            height: auto;
+            margin: 20px;
+        }
+
+        .stats {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 20px;
+            font-size: 24px;
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+            z-index: 6;
+        }
+
+        .lives {
+            display: flex;
+            align-items: center;
+        }
+
+        .heart {
+            color: red;
+            font-size: 28px;
+            margin: 0 5px;
+        }
+
+        .game-object {
+            position: absolute;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            z-index: 7;
+        }
+
+        .coin {
+            background-image: url('coin.png');
+        }
+
+        .bomb {
+            background-image: url('bomb.png');
+        }
+
+        .flipping {
+            animation: flip 0.5s infinite alternate;
+        }
+
+        @keyframes flip {
+            0% { transform: scaleX(1); }
+            100% { transform: scaleX(-1); }
+        }
+
+        .powered-by {
+            position: absolute;
+            bottom: 10px;
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.7);
+            text-decoration: none;
+        }
+
+        .powered-by:hover {
+            text-decoration: underline;
+        }
+
+        .game-over-title {
+            font-size: 48px;
+            margin-bottom: 30px;
+            color: #ffcc00;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        .final-score {
+            font-size: 36px;
+            margin-bottom: 40px;
+            color: white;
+        }
+    </style>
 </head>
 <body>
-  <div id="game-wrap"><canvas id="game" width="720" height="1280"></canvas></div>
-  <div class="hint">Tap koin = +1 $RIALO • Tap bom = -1 nyawa</div>
-  <div id="err"></div>
+    <!-- Halaman Awal -->
+    <div id="start-screen" class="screen">
+        <img src="btn-start.png" alt="Start" class="btn" id="btn-start">
+    </div>
 
-  <!-- Musik: autoplay (muted) -> unmute saat START (aturan browser) -->
-  <audio id="bgm" src="bgm.mp3" preload="auto" loop autoplay muted></audio>
+    <!-- Halaman Game -->
+    <div id="game-screen" class="screen">
+        <div class="stats">
+            <div class="lives">
+                <span id="lives-count">3</span>
+                <span class="heart">❤</span>
+            </div>
+            <div class="score">
+                <span id="score">0</span> $RIALO
+            </div>
+        </div>
+        <!-- Objek game akan ditambahkan secara dinamis -->
+    </div>
 
-  <script>
-  // ===== Overlay error biar gak "blank" =====
-  const errBox = document.getElementById('err');
-  const showError = (m)=>{ errBox.style.display='block'; errBox.textContent='ERROR: '+m; };
-  window.addEventListener('error', e=>showError(e.message||String(e)));
-  window.addEventListener('unhandledrejection', e=>showError((e.reason&&e.reason.message)||String(e.reason)));
+    <!-- Halaman Game Over -->
+    <div id="game-over-screen" class="screen">
+        <h1 class="game-over-title">GAME OVER</h1>
+        <div class="final-score">Skor: <span id="final-score">0</span> $RIALO</div>
+        <img src="btn-tryagain.png" alt="Try Again" class="btn" id="btn-tryagain">
+        <img src="btn-exit.png" alt="Exit" class="btn" id="btn-exit">
+        <a href="https://rialo.io" class="powered-by" target="_blank">powered by rialo</a>
+    </div>
 
-  // =======================
-  //  KONFIGURASI
-  // =======================
-  const W=720,H=1280;
-  const STATES={COVER:0,PLAY:1,OVER:2};
-  const COIN_FRAMES=3, BOMB_FRAMES=3; // ganti jika sprite frame beda
-  const COIN_FPS=12, BOMB_FPS=10;
-  const COIN_PROB=0.72, SPAWN_MS=700;
-  const SPEED_MIN=260, SPEED_MAX=600;
-  const RADIUS=56;        // radius klik
-  const LIVES_MAX=3;
-  const SIZE=128;         // ukuran gambar objek saat digambar
+    <audio id="bgm" loop>
+        <source src="bgm.mp3" type="audio/mpeg">
+    </audio>
 
-  // Aset (root path)
-  const ASSET={
-    cover:'cover-bg.png',
-    bg:'bg-game.png',
-    start:'btn-start.png',
-    try:'btn-tryagain.png',
-    exit:'btn-exit.png',
-    coin:'coin.png', bomb:'bomb.png',
-    fcoin:'flip-coin.png', fbomb:'flip-bomb.png'
-  };
+    <script>
+        // Elemen DOM
+        const startScreen = document.getElementById('start-screen');
+        const gameScreen = document.getElementById('game-screen');
+        const gameOverScreen = document.getElementById('game-over-screen');
+        const btnStart = document.getElementById('btn-start');
+        const btnTryAgain = document.getElementById('btn-tryagain');
+        const btnExit = document.getElementById('btn-exit');
+        const livesCount = document.getElementById('lives-count');
+        const scoreDisplay = document.getElementById('score');
+        const finalScoreDisplay = document.getElementById('final-score');
+        const bgm = document.getElementById('bgm');
 
-  // =======================
-  //  KANVAS & AUDIO
-  // =======================
-  const cvs=document.getElementById('game'), ctx=cvs.getContext('2d');
-  const bgm=document.getElementById('bgm');
+        // Variabel game
+        let score = 0;
+        let lives = 3;
+        let gameInterval;
+        let objectInterval;
+        let gameObjects = [];
+        let gameSpeed = 1500; // Interval pembuatan objek (ms)
+        let isGameRunning = false;
 
-  // =======================
-  //  MUAT GAMBAR
-  // =======================
-  const IMG={};
-  const loadImage=(k,src)=>new Promise(res=>{
-    const im=new Image();
-    im.onload=()=>{ IMG[k]=im; res(true); };
-    im.onerror=()=>{ console.warn('gagal muat',src); res(false); };
-    im.src=src;
-  });
+        // Fungsi untuk memulai game
+        function startGame() {
+            // Reset game state
+            score = 0;
+            lives = 3;
+            scoreDisplay.textContent = score;
+            livesCount.textContent = lives;
+            gameObjects = [];
+            
+            // Bersihkan objek game yang ada
+            const existingObjects = document.querySelectorAll('.game-object');
+            existingObjects.forEach(obj => obj.remove());
+            
+            // Tampilkan layar game, sembunyikan layar lain
+            startScreen.style.display = 'none';
+            gameOverScreen.style.display = 'none';
+            gameScreen.style.display = 'flex';
+            
+            // Mulai musik
+            bgm.play().catch(e => console.log("Autoplay prevented: ", e));
+            
+            // Mulai game loop
+            isGameRunning = true;
+            gameInterval = setInterval(updateGame, 50);
+            objectInterval = setInterval(createObject, gameSpeed);
+            
+            // Tambahkan event listener untuk touch
+            gameScreen.addEventListener('touchstart', handleTouch);
+        }
 
-  // =======================
-  //  STATE GAME
-  // =======================
-  let state=STATES.COVER;
-  let score=0, lives=LIVES_MAX;
-  let objects=[]; // {x,y,vy,type,img,frames,fps,fw,fh,frame,ft}
-  let lastT=0, acc=0;
+        // Fungsi untuk membuat objek (coin atau bomb)
+        function createObject() {
+            if (!isGameRunning) return;
+            
+            const objectType = Math.random() < 0.7 ? 'coin' : 'bomb'; // 70% coin, 30% bomb
+            const object = document.createElement('div');
+            object.className = `game-object ${objectType}`;
+            
+            // Atur ukuran objek
+            const size = Math.random() * 40 + 40; // 40-80px
+            object.style.width = `${size}px`;
+            object.style.height = `${size}px`;
+            
+            // Posisi acak di bagian atas layar
+            const maxX = window.innerWidth - size;
+            object.style.left = `${Math.random() * maxX}px`;
+            object.style.top = `-${size}px`;
+            
+            // Tambahkan animasi flip untuk coin dan bomb
+            if (objectType === 'coin') {
+                object.style.backgroundImage = "url('flip-coin.png')";
+            } else {
+                object.style.backgroundImage = "url('flip-bomb.png')";
+            }
+            object.classList.add('flipping');
+            
+            // Simpan data objek
+            const objData = {
+                element: object,
+                type: objectType,
+                speed: Math.random() * 3 + 2, // Kecepatan jatuh
+                isActive: true
+            };
+            
+            gameObjects.push(objData);
+            gameScreen.appendChild(object);
+        }
 
-  // tombol rect
-  const BTN={
-    start:{x:W/2-140,y:H-220,w:280,h:120,hover:false},
-    try:{x:W/2-300,y:H/2+160,w:260,h:110,hover:false},
-    exit:{x:W/2+40,y:H/2+160,w:260,h:110,hover:false}
-  };
-  // area klik "powered by rialo"
-  let poweredRect=null;
+        // Fungsi untuk update posisi objek
+        function updateGame() {
+            if (!isGameRunning) return;
+            
+            for (let i = gameObjects.length - 1; i >= 0; i--) {
+                const obj = gameObjects[i];
+                if (!obj.isActive) continue;
+                
+                const rect = obj.element.getBoundingClientRect();
+                const newTop = rect.top + obj.speed;
+                
+                // Jika objek jatuh keluar dari layar
+                if (newTop > window.innerHeight) {
+                    obj.isActive = false;
+                    gameScreen.removeChild(obj.element);
+                    gameObjects.splice(i, 1);
+                    
+                    // Jika coin lolos, kurangi nyawa
+                    if (obj.type === 'coin') {
+                        loseLife();
+                    }
+                } else {
+                    obj.element.style.top = `${newTop}px`;
+                }
+            }
+        }
 
-  // =======================
-  //  UTIL & INPUT
-  // =======================
-  const rnd=(a,b)=>Math.random()*(b-a)+a;
-  const hitRect=(x,y,r)=>x>=r.x && x<=r.x+r.w && y>=r.y && y<=r.y+r.h;
-  const d2=(ax,ay,bx,by)=>{const dx=ax-bx,dy=ay-by;return dx*dx+dy*dy;};
+        // Fungsi untuk menangani sentuhan
+        function handleTouch(e) {
+            if (!isGameRunning) return;
+            
+            const touch = e.touches[0];
+            const touchX = touch.clientX;
+            const touchY = touch.clientY;
+            
+            for (let i = gameObjects.length - 1; i >= 0; i--) {
+                const obj = gameObjects[i];
+                if (!obj.isActive) continue;
+                
+                const rect = obj.element.getBoundingClientRect();
+                
+                // Cek jika sentuhan mengenai objek
+                if (touchX >= rect.left && touchX <= rect.right &&
+                    touchY >= rect.top && touchY <= rect.bottom) {
+                    
+                    obj.isActive = false;
+                    gameScreen.removeChild(obj.element);
+                    gameObjects.splice(i, 1);
+                    
+                    if (obj.type === 'coin') {
+                        // Tambah skor untuk coin
+                        score++;
+                        scoreDisplay.textContent = score;
+                    } else {
+                        // Kurangi nyawa untuk bomb
+                        loseLife();
+                    }
+                    
+                    break; // Hanya tangani satu objek per sentuhan
+                }
+            }
+        }
 
-  function lp(ev){
-    const r=cvs.getBoundingClientRect();
-    const sx=W/r.width, sy=H/r.height;
-    const c=ev.touches?ev.touches[0]:ev;
-    return {x:(c.clientX-r.left)*sx, y:(c.clientY-r.top)*sy};
-  }
+        // Fungsi untuk mengurangi nyawa
+        function loseLife() {
+            lives--;
+            livesCount.textContent = lives;
+            
+            if (lives <= 0) {
+                gameOver();
+            }
+        }
 
-  cvs.addEventListener('mousemove',e=>{
-    const p=lp(e);
-    if(state===STATES.COVER) BTN.start.hover=hitRect(p.x,p.y,BTN.start);
-    else if(state===STATES.OVER){
-      BTN.try.hover = hitRect(p.x,p.y,BTN.try);
-      BTN.exit.hover= hitRect(p.x,p.y,BTN.exit);
-    }
-  });
-  cvs.addEventListener('mousedown',onPress);
-  cvs.addEventListener('touchstart',onPress,{passive:false});
-  function onPress(e){
-    e.preventDefault();
-    const p=lp(e);
-    if(state===STATES.COVER && hitRect(p.x,p.y,BTN.start)){
-      bgm.muted=false; bgm.play().catch(()=>{});
-      startGame(); return;
-    }
-    if(state===STATES.PLAY){
-      let hit=-1;
-      for(let i=objects.length-1;i>=0;i--){
-        const o=objects[i];
-        if(d2(p.x,p.y,o.x,o.y)<=RADIUS*RADIUS){ hit=i; break; }
-      }
-      if(hit>=0){
-        const o=objects[hit];
-        if(o.type==='coin') score++; else { lives--; shake(6,150); }
-        objects.splice(hit,1);
-        if(lives<=0) toOver();
-      }
-      return;
-    }
-    if(state===STATES.OVER){
-      if(hitRect(p.x,p.y,BTN.try)){ startGame(); return; }
-      if(hitRect(p.x,p.y,BTN.exit)){ toCover();  return; }
-      if(poweredRect && hitRect(p.x,p.y, poweredRect)){
-        window.open('https://www.rialo.io/','_blank','noopener');
-      }
-    }
-  }
+        // Fungsi ketika game over
+        function gameOver() {
+            isGameRunning = false;
+            clearInterval(gameInterval);
+            clearInterval(objectInterval);
+            
+            // Tampilkan skor akhir
+            finalScoreDisplay.textContent = score;
+            
+            // Tampilkan layar game over
+            gameOverScreen.style.display = 'flex';
+            gameScreen.style.display = 'none';
+            
+            // Hentikan musik
+            bgm.pause();
+            bgm.currentTime = 0;
+        }
 
-  // =======================
-  //  TRANSISI
-  // =======================
-  function toCover(){ state=STATES.COVER; score=0; lives=LIVES_MAX; objects.length=0; acc=0; }
-  function startGame(){ state=STATES.PLAY; score=0; lives=LIVES_MAX; objects.length=0; acc=0; }
-  function toOver(){ state=STATES.OVER; }
+        // Event Listeners
+        btnStart.addEventListener('click', startGame);
+        btnStart.addEventListener('touchstart', startGame);
+        
+        btnTryAgain.addEventListener('click', startGame);
+        btnTryAgain.addEventListener('touchstart', startGame);
+        
+        btnExit.addEventListener('click', function() {
+            gameOverScreen.style.display = 'none';
+            startScreen.style.display = 'flex';
+        });
+        btnExit.addEventListener('touchstart', function() {
+            gameOverScreen.style.display = 'none';
+            startScreen.style.display = 'flex';
+        });
 
-  // =======================
-  //  SPAWN & ANIM
-  // =======================
-  function spawn(){
-    const isCoin=Math.random()<COIN_PROB;
-    const type=isCoin?'coin':'bomb';
-    const x=rnd(60,W-60), y=-80, vy=rnd(SPEED_MIN,SPEED_MAX);
-    let img,frames,fps;
-    if(isCoin && IMG.fcoin){ img=IMG.fcoin; frames=COIN_FRAMES; fps=COIN_FPS; }
-    else if(!isCoin && IMG.fbomb){ img=IMG.fbomb; frames=BOMB_FRAMES; fps=BOMB_FPS; }
-    else { img=isCoin?IMG.coin:IMG.bomb; frames=1; fps=1; }
-    const fw=img?Math.floor(img.naturalWidth/frames):SIZE, fh=img?img.naturalHeight:SIZE;
-    objects.push({x,y,vy,type,img,frames,fps,fw,fh,frame:0,ft:0});
-  }
+        // Event untuk mencegah zoom pada double-tap
+        document.addEventListener('touchstart', function(e) {
+            if (e.touches.length > 1) {
+                e.preventDefault();
+            }
+        }, { passive: false });
 
-  let sMag=0,sTime=0;
-  const shake=(m,ms)=>{ sMag=m; sTime=ms; };
+        // Event untuk mencegah konteks menu pada long press
+        document.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+        });
 
-  function update(dt){
-    if(state!==STATES.PLAY) return;
-    acc+=dt*1000;
-    while(acc>=SPAWN_MS){ spawn(); acc-=SPAWN_MS; }
-
-    for(let i=objects.length-1;i>=0;i--){
-      const o=objects[i];
-      o.y+=o.vy*dt;
-      if(o.frames>1){
-        o.ft+=dt; const dur=1/o.fps;
-        while(o.ft>=dur){ o.ft-=dur; o.frame=(o.frame+1)%o.frames; }
-      }
-      if(o.y-RADIUS>H){
-        if(o.type==='coin'){ lives--; if(lives<=0){ objects.splice(i,1); toOver(); break; } }
-        objects.splice(i,1);
-      }
-    }
-    if(sTime>0){ sTime-=dt*1000; if(sTime<=0) sMag=0; }
-  }
-
-  // =======================
-  //  GRAFIS
-  // =======================
-  function drawHearts(n){
-    const x0=16, y=20, gap=40, r=10;
-    for(let i=0;i<n;i++){
-      const x=x0+i*gap;
-      ctx.save();
-      ctx.translate(x, y+10);
-      ctx.scale(1.4,1.4);
-      ctx.fillStyle='#ff5b77';
-      ctx.beginPath();
-      // path hati sederhana
-      ctx.moveTo(0,0);
-      ctx.bezierCurveTo(0,-8, -12,-10, -12,2);
-      ctx.bezierCurveTo(-12,14, 0,18, 0,26);
-      ctx.bezierCurveTo(0,18, 12,14, 12,2);
-      ctx.bezierCurveTo(12,-10, 0,-8, 0,0);
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
-    }
-  }
-
-  function drawCover(){
-    if(IMG.cover) ctx.drawImage(IMG.cover,0,0,W,H);
-    else { ctx.fillStyle='#091219'; ctx.fillRect(0,0,W,H); }
-    ctx.fillStyle='rgba(0,0,0,.45)'; ctx.fillRect(0,0,W,140);
-    ctx.fillStyle='#fff'; ctx.font='bold 48px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText('Tap-Tap Rialo', W/2, 80);
-    const b=BTN.start;
-    if(IMG.start) ctx.drawImage(IMG.start,b.x,b.y,b.w,b.h);
-    else { ctx.fillStyle='#2b8a3e'; ctx.fillRect(b.x,b.y,b.w,b.h);
-           ctx.fillStyle='#fff'; ctx.font='bold 40px system-ui'; ctx.fillText('START', b.x+b.w/2, b.y+b.h/2); }
-    ctx.fillStyle='rgba(255,255,255,.9)'; ctx.font='24px system-ui';
-    ctx.fillText('Tap START untuk memulai • Musik aktif', W/2, b.y+b.h+34);
-  }
-
-  function drawPlay(){
-    if(IMG.bg) ctx.drawImage(IMG.bg,0,0,W,H);
-    else { ctx.fillStyle='#0b0e12'; ctx.fillRect(0,0,W,H); }
-    // objek
-    for(const o of objects){
-      const img=o.img;
-      if(img && o.frames>1){
-        const sx=o.frame*o.fw, sy=0;
-        ctx.drawImage(img, sx,sy,o.fw,o.fh, Math.round(o.x-SIZE/2), Math.round(o.y-SIZE/2), SIZE,SIZE);
-      }else if(img){
-        ctx.drawImage(img, 0,0,img.naturalWidth,img.naturalHeight, Math.round(o.x-SIZE/2), Math.round(o.y-SIZE/2), SIZE,SIZE);
-      }else{
-        ctx.fillStyle=(o.type==='coin')?'#ffd24a':'#ff5151';
-        ctx.beginPath(); ctx.arc(o.x,o.y,RADIUS,0,Math.PI*2); ctx.fill();
-      }
-    }
-    // HUD
-    ctx.fillStyle='rgba(0,0,0,.35)'; ctx.fillRect(0,0,W,72);
-    // skor = $RIALO
-    ctx.fillStyle='#fff'; ctx.font='28px system-ui'; ctx.textAlign='left';
-    ctx.fillText('Skor: '+score+'  ( '+score+' $RIALO )', 18, 46);
-    // love/nyawa
-    drawHearts(lives);
-  }
-
-  function drawOver(){
-    drawPlay();
-    ctx.fillStyle='rgba(0,0,0,.55)'; ctx.fillRect(0,0,W,H);
-    ctx.fillStyle='#fff'; ctx.font='bold 56px system-ui'; ctx.textAlign='center';
-    ctx.fillText('CONGRATULATION', W/2, H/2 - 140);
-    // kategori skor
-    const cat = (score<=30) ? 'Bad People' : (score<=60 ? 'Good People' : 'Amazing People');
-    ctx.font='bold 40px system-ui'; ctx.fillText('Score: '+score+'  ( '+score+' $RIALO )', W/2, H/2 - 80);
-    ctx.font='32px system-ui';
-    ctx.fillStyle=(score<=30)?'#ff7575':(score<=60?'#ffd24a':'#aef1b8');
-    ctx.fillText(cat, W/2, H/2 - 30);
-    // tombol
-    const t=BTN.try, e=BTN.exit;
-    if(IMG.try) ctx.drawImage(IMG.try,t.x,t.y,t.w,t.h); else { ctx.fillStyle='#3478f6'; ctx.fillRect(t.x,t.y,t.w,t.h); }
-    if(IMG.exit) ctx.drawImage(IMG.exit,e.x,e.y,e.w,e.h); else { ctx.fillStyle='#ff5151'; ctx.fillRect(e.x,e.y,e.w,e.h); }
-    // powered by rialo (klik -> rialo.io)
-    const text='powered by rialo';
-    ctx.font='18px system-ui'; ctx.fillStyle='rgba(255,255,255,.85)'; ctx.textAlign='center';
-    const tx=W/2, ty=H-18;
-    ctx.fillText(text, tx, ty);
-    const w=ctx.measureText(text).width;
-    poweredRect={x:tx-w/2-6, y:ty-20, w:w+12, h:24};
-    // garis tipis bawah teks (indikasi link)
-    ctx.strokeStyle='rgba(255,255,255,.6)'; ctx.beginPath(); ctx.moveTo(tx-w/2, ty+4); ctx.lineTo(tx+w/2, ty+4); ctx.stroke();
-  }
-
-  // =======================
-  //  LOOP
-  // =======================
-  let ox=0,oy=0;
-  function loop(ts){
-    try{
-      const dt=Math.min(0.033, (ts-(lastT||ts))/1000); lastT=ts;
-      // shake
-      if(sTime>0){ sTime-=dt*1000; const m=sTime>0?sMag:0; ox=(Math.random()*2-1)*m; oy=(Math.random()*2-1)*m; if(sTime<=0) sMag=0; } else { ox=oy=0; }
-      ctx.save(); ctx.translate(ox,oy);
-      if(state===STATES.COVER) drawCover();
-      else if(state===STATES.PLAY){ update(dt); drawPlay(); }
-      else drawOver();
-      ctx.restore();
-    }catch(e){ showError(e.message||String(e)); }
-    requestAnimationFrame(loop);
-  }
-
-  // =======================
-  //  INIT
-  // =======================
-  (async function init(){
-    await Promise.all([
-      loadImage('cover',ASSET.cover),
-      loadImage('bg',ASSET.bg),
-      loadImage('start',ASSET.start),
-      loadImage('try',ASSET.try),
-      loadImage('exit',ASSET.exit),
-      loadImage('coin',ASSET.coin),
-      loadImage('bomb',ASSET.bomb),
-      loadImage('fcoin',ASSET.fcoin),
-      loadImage('fbomb',ASSET.fbomb),
-    ]);
-    toCover();
-    requestAnimationFrame(loop);
-  })();
-  </script>
+        // Inisialisasi game
+        window.addEventListener('load', function() {
+            // Pastikan semua gambar sudah dimuat sebelum memulai
+            const images = [
+                'cover-bg.png', 'bg-game.png', 'btn-start.png', 
+                'btn-tryagain.png', 'btn-exit.png', 'coin.png', 
+                'bomb.png', 'flip-coin.png', 'flip-bomb.png'
+            ];
+            
+            let loadedImages = 0;
+            const totalImages = images.length;
+            
+            images.forEach(src => {
+                const img = new Image();
+                img.onload = function() {
+                    loadedImages++;
+                    if (loadedImages === totalImages) {
+                        console.log('Semua gambar berhasil dimuat');
+                    }
+                };
+                img.onerror = function() {
+                    console.error('Gagal memuat gambar: ' + src);
+                    loadedImages++;
+                };
+                img.src = src;
+            });
+        });
+    </script>
 </body>
 </html>
