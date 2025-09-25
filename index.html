@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Game Koin Jatuh</title>
     <style>
         * {
@@ -10,11 +10,20 @@
             padding: 0;
             box-sizing: border-box;
             font-family: 'Arial', sans-serif;
+            -webkit-tap-highlight-color: transparent; /* Hilangkan highlight saat tap */
+            -webkit-user-select: none; /* Nonaktifkan seleksi teks */
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
         }
         
         body {
             overflow: hidden;
             background-color: #000;
+            width: 100vw;
+            height: 100vh;
+            position: fixed;
+            touch-action: manipulation; /* Meningkatkan responsivitas touch */
         }
         
         .screen {
@@ -26,6 +35,8 @@
             justify-content: center;
             align-items: center;
             transition: opacity 0.5s;
+            top: 0;
+            left: 0;
         }
         
         #cover-screen {
@@ -49,119 +60,195 @@
             display: none;
             color: white;
             text-align: center;
+            padding: 20px;
         }
         
         h1 {
-            font-size: 48px;
-            margin-bottom: 20px;
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
         }
         
         h2 {
-            font-size: 36px;
-            margin-bottom: 10px;
+            font-size: 1.8rem;
+            margin-bottom: 0.5rem;
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
         }
         
         .score-display {
-            font-size: 32px;
-            margin-bottom: 30px;
+            font-size: 1.5rem;
+            margin-bottom: 1.5rem;
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
         }
         
         .category {
-            font-size: 28px;
-            margin-bottom: 30px;
+            font-size: 1.4rem;
+            margin-bottom: 1.5rem;
             font-style: italic;
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
         }
         
         .button-container {
             display: flex;
-            gap: 20px;
-            margin-top: 20px;
+            gap: 1rem;
+            margin-top: 1rem;
+            flex-wrap: wrap;
+            justify-content: center;
         }
         
         .btn {
-            width: 200px;
-            height: 80px;
+            width: 150px;
+            height: 60px;
             cursor: pointer;
             transition: transform 0.2s;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            border: none;
+            background-color: transparent;
         }
         
-        .btn:hover {
+        .btn:hover, .btn:active {
             transform: scale(1.05);
         }
         
         #btn-start {
-            margin-top: 300px;
+            margin-top: 50vh;
+            width: 200px;
+            height: 80px;
         }
         
         .stats {
             position: absolute;
-            top: 20px;
-            left: 20px;
+            top: 10px;
+            left: 10px;
             color: white;
-            font-size: 24px;
+            font-size: 1.2rem;
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 5px 10px;
+            border-radius: 10px;
         }
         
         .falling-object {
             position: absolute;
             cursor: pointer;
             transition: transform 0.1s;
+            -webkit-tap-highlight-color: transparent;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
         }
         
-        .falling-object:hover {
+        .falling-object:active {
             transform: scale(1.1);
         }
         
         .coin {
             background-image: url('coin.png');
-            background-size: contain;
-            background-repeat: no-repeat;
         }
         
         .bomb {
             background-image: url('bomb.png');
-            background-size: contain;
-            background-repeat: no-repeat;
         }
         
         .heart {
             display: inline-block;
-            width: 30px;
-            height: 30px;
+            width: 20px;
+            height: 20px;
             background-color: red;
-            margin: 0 5px;
+            margin: 0 3px;
             transform: rotate(45deg);
             position: relative;
         }
         
         .heart:before, .heart:after {
             content: '';
-            width: 30px;
-            height: 30px;
+            width: 20px;
+            height: 20px;
             background-color: red;
             border-radius: 50%;
             position: absolute;
         }
         
         .heart:before {
-            top: -15px;
+            top: -10px;
             left: 0;
         }
         
         .heart:after {
             top: 0;
-            left: -15px;
+            left: -10px;
+        }
+        
+        /* Style untuk tombol khusus */
+        .btn-start {
+            background-image: url('btn-start.png');
+        }
+        
+        .btn-tryagain {
+            background-image: url('btn-tryagain.png');
+        }
+        
+        .btn-exit {
+            background-image: url('btn-ext.png');
+        }
+        
+        /* Fullscreen mode */
+        #fullscreen-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 40px;
+            height: 40px;
+            background-color: rgba(255, 255, 255, 0.3);
+            border: none;
+            border-radius: 5px;
+            color: white;
+            font-size: 1.5rem;
+            cursor: pointer;
+            z-index: 20;
+        }
+        
+        /* Media queries untuk berbagai ukuran layar */
+        @media (max-width: 480px) {
+            h1 {
+                font-size: 2rem;
+            }
+            
+            .score-display, .category {
+                font-size: 1.2rem;
+            }
+            
+            .btn {
+                width: 130px;
+                height: 50px;
+            }
+            
+            #btn-start {
+                width: 180px;
+                height: 70px;
+            }
+            
+            .stats {
+                font-size: 1rem;
+            }
+        }
+        
+        @media (max-height: 600px) {
+            #btn-start {
+                margin-top: 40vh;
+            }
         }
     </style>
 </head>
 <body>
+    <!-- Tombol fullscreen -->
+    <button id="fullscreen-btn">⛶</button>
+    
     <!-- Layar Awal -->
     <div id="cover-screen" class="screen">
-        <img src="btn-start.png" alt="START" id="btn-start" class="btn">
+        <div class="btn btn-start" id="btn-start"></div>
     </div>
     
     <!-- Layar Game -->
@@ -179,8 +266,8 @@
         <div class="score-display">Skor Anda: <span id="final-score">0</span></div>
         <div class="category" id="category">Bad People</div>
         <div class="button-container">
-            <img src="btn-tryagain.png" alt="TRY AGAIN" id="btn-tryagain" class="btn">
-            <img src="btn-ext.png" alt="EXIT" id="btn-exit" class="btn">
+            <div class="btn btn-tryagain" id="btn-tryagain"></div>
+            <div class="btn btn-exit" id="btn-exit"></div>
         </div>
     </div>
     
@@ -211,6 +298,7 @@
         const finalScoreDisplay = document.getElementById('final-score');
         const categoryDisplay = document.getElementById('category');
         const bgm = document.getElementById('bgm');
+        const fullscreenBtn = document.getElementById('fullscreen-btn');
         
         // Fungsi untuk memulai game
         function startGame() {
@@ -238,7 +326,9 @@
             spawnInterval = setInterval(spawnObject, gameSpeed);
             
             // Mulai musik
-            bgm.play();
+            bgm.play().catch(e => {
+                console.log("Autoplay dicegah, perlu interaksi pengguna");
+            });
         }
         
         // Fungsi untuk menghentikan game
@@ -277,14 +367,17 @@
             const objectType = isCoin ? 'coin' : 'bomb';
             const objectSize = isCoin ? 60 : 70;
             
+            // Sesuaikan ukuran untuk layar kecil
+            const adjustedSize = Math.min(objectSize, window.innerWidth / 6);
+            
             // Buat elemen objek
             const object = document.createElement('div');
             object.className = `falling-object ${objectType}`;
             object.id = `object-${objectId}`;
-            object.style.width = `${objectSize}px`;
-            object.style.height = `${objectSize}px`;
-            object.style.left = `${Math.random() * (window.innerWidth - objectSize)}px`;
-            object.style.top = `-${objectSize}px`;
+            object.style.width = `${adjustedSize}px`;
+            object.style.height = `${adjustedSize}px`;
+            object.style.left = `${Math.random() * (window.innerWidth - adjustedSize)}px`;
+            object.style.top = `-${adjustedSize}px`;
             
             // Tambahkan ke game screen
             gameScreen.appendChild(object);
@@ -294,7 +387,7 @@
                 id: objectId,
                 element: object,
                 type: objectType,
-                top: -objectSize,
+                top: -adjustedSize,
                 speed: 2 + Math.random() * 2,
                 animationId: null
             };
@@ -325,8 +418,14 @@
             
             fall();
             
-            // Event listener untuk klik objek
-            object.addEventListener('click', () => {
+            // Event listener untuk tap/klik objek
+            object.addEventListener('click', handleObjectClick);
+            object.addEventListener('touchstart', handleObjectClick, {passive: true});
+            
+            function handleObjectClick(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                
                 if (objData.type === 'coin') {
                     // Koin diklik, tambah skor
                     score++;
@@ -354,7 +453,7 @@
                 
                 // Hapus dari array
                 removeObject(objData.id);
-            });
+            }
             
             objectId++;
             
@@ -397,20 +496,41 @@
             }
         }
         
+        // Fungsi untuk toggle fullscreen
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    console.log(`Error attempting to enable fullscreen: ${err.message}`);
+                });
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
+        }
+        
         // Event listeners
         btnStart.addEventListener('click', startGame);
+        btnStart.addEventListener('touchstart', startGame, {passive: true});
         
         btnTryAgain.addEventListener('click', startGame);
+        btnTryAgain.addEventListener('touchstart', startGame, {passive: true});
         
         btnExit.addEventListener('click', () => {
             gameOverScreen.style.display = 'none';
             coverScreen.style.display = 'flex';
         });
+        btnExit.addEventListener('touchstart', () => {
+            gameOverScreen.style.display = 'none';
+            coverScreen.style.display = 'flex';
+        }, {passive: true});
+        
+        fullscreenBtn.addEventListener('click', toggleFullscreen);
         
         // Auto play musik (dengan penanganan autoplay policy)
         document.addEventListener('click', function initAudio() {
             bgm.play().catch(e => {
-                console.log("Autoplay prevented, user interaction required");
+                console.log("Autoplay dicegah, perlu interaksi pengguna");
             });
             document.removeEventListener('click', initAudio);
         });
@@ -426,6 +546,22 @@
                 }
             });
         });
+        
+        // Mencegah zoom dengan pinch gesture
+        document.addEventListener('gesturestart', function (e) {
+            e.preventDefault();
+        });
+        
+        document.addEventListener('gesturechange', function (e) {
+            e.preventDefault();
+        });
+        
+        document.addEventListener('gestureend', function (e) {
+            e.preventDefault();
+        });
+        
+        // Inisialisasi hearts
+        updateHearts();
     </script>
 </body>
 </html>
