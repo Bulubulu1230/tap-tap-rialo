@@ -104,6 +104,17 @@
             margin: 0 5px;
         }
 
+        .level-info {
+            position: absolute;
+            top: 60px;
+            width: 100%;
+            text-align: center;
+            font-size: 18px;
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+            z-index: 6;
+        }
+
         .game-object {
             position: absolute;
             background-size: contain;
@@ -172,9 +183,52 @@
             50% { transform: scale(0.9); }
             100% { transform: scale(1); }
         }
+
+        .audio-notification {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            z-index: 20;
+            display: none;
+        }
+
+        .level-up {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.8);
+            color: #ffcc00;
+            padding: 20px 40px;
+            border-radius: 10px;
+            font-size: 32px;
+            z-index: 25;
+            display: none;
+            animation: levelUpFade 2s;
+        }
+
+        @keyframes levelUpFade {
+            0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+            50% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+            100% { opacity: 0; transform: translate(-50%, -50%) scale(1); }
+        }
     </style>
 </head>
 <body>
+    <!-- Notifikasi audio -->
+    <div class="audio-notification" id="audio-notification">
+        Tekan layar untuk mengaktifkan audio
+    </div>
+
+    <!-- Notifikasi level up -->
+    <div class="level-up" id="level-up">Level Up!</div>
+
     <!-- Halaman Awal -->
     <div id="start-screen" class="screen">
         <img src="btn-start.png" alt="Start" class="btn" id="btn-start">
@@ -191,6 +245,9 @@
                 <span id="score">0</span> $RIALO
             </div>
         </div>
+        <div class="level-info">
+            Level: <span id="level">1</span> | Kecepatan: <span id="speed">1x</span>
+        </div>
         <!-- Objek game akan ditambahkan secara dinamis -->
     </div>
 
@@ -198,12 +255,13 @@
     <div id="game-over-screen" class="screen">
         <h1 class="game-over-title">GAME OVER</h1>
         <div class="final-score">Skor: <span id="final-score">0</span> $RIALO</div>
+        <div class="final-score">Level: <span id="final-level">1</span></div>
         <img src="btn-tryagain.png" alt="Try Again" class="btn" id="btn-tryagain">
         <img src="btn-exit.png" alt="Exit" class="btn" id="btn-exit">
         <a href="https://rialo.io" class="powered-by" target="_blank">powered by rialo</a>
     </div>
 
-    <audio id="bgm" loop>
+    <audio id="bgm" loop preload="auto">
         <source src="bgm.mp3" type="audio/mpeg">
     </audio>
 
@@ -218,25 +276,97 @@
         const livesCount = document.getElementById('lives-count');
         const scoreDisplay = document.getElementById('score');
         const finalScoreDisplay = document.getElementById('final-score');
+        const levelDisplay = document.getElementById('level');
+        const speedDisplay = document.getElementById('speed');
+        const finalLevelDisplay = document.getElementById('final-level');
         const bgm = document.getElementById('bgm');
+        const audioNotification = document.getElementById('audio-notification');
+        const levelUpNotification = document.getElementById('level-up');
 
         // Variabel game
         let score = 0;
         let lives = 3;
+        let level = 1;
         let gameInterval;
         let objectInterval;
         let gameObjects = [];
-        let gameSpeed = 1500; // Interval pembuatan objek (ms)
+        let baseGameSpeed = 1500; // Interval pembuatan objek dasar (ms)
+        let currentGameSpeed = baseGameSpeed;
+        let baseObjectSpeed = 2; // Kecepatan jatuh dasar
+        let currentObjectSpeed = baseObjectSpeed;
         let isGameRunning = false;
+        let audioEnabled = false;
+        let lastCoinTime = 0; // Waktu terakhir coin dibuat
+
+        // Fungsi untuk mengaktifkan audio
+        function enableAudio() {
+            if (audioEnabled) return;
+            
+            // Coba memutar audio
+            const playPromise = bgm.play();
+            
+            if (playPromise !== undefined) {
+                playPromise.then(() => {
+                    // Audio berhasil diputar
+                    audioEnabled = true;
+                    audioNotification.style.display = 'none';
+                    console.log("Audio berhasil diaktifkan");
+                }).catch(error => {
+                    // Audio gagal diputar, tampilkan notifikasi
+                    audioNotification.style.display = 'block';
+                    console.log("Gagal memutar audio: ", error);
+                    
+                    // Coba lagi setelah interaksi pengguna
+                    document.addEventListener('click', retryEnableAudio, { once: true });
+                    document.addEventListener('touchstart', retryEnableAudio, { once: true });
+                });
+            }
+        }
+
+        // Fungsi untuk mencoba lagi mengaktifkan audio
+        function retryEnableAudio() {
+            enableAudio();
+        }
+
+        // Fungsi untuk meningkatkan level
+        function increaseLevel() {
+            level++;
+            levelDisplay.textContent = level;
+            
+            // Tingkatkan kecepatan game
+            currentGameSpeed = Math.max(300, baseGameSpeed - (level * 100)); // Minimal 300ms
+            currentObjectSpeed = baseObjectSpeed + (level * 0.5); // Tambah kecepatan jatuh
+            
+            // Update tampilan kecepatan
+            speedDisplay.textContent = (1 + (level * 0.2)).toFixed(1) + "x";
+            
+            // Tampilkan notifikasi level up
+            levelUpNotification.style.display = 'block';
+            setTimeout(() => {
+                levelUpNotification.style.display = 'none';
+            }, 2000);
+            
+            // Hentikan interval lama dan buat yang baru dengan kecepatan yang diperbarui
+            clearInterval(objectInterval);
+            objectInterval = setInterval(createObject, currentGameSpeed);
+            
+            console.log(`Level meningkat menjadi ${level}, kecepatan: ${currentGameSpeed}ms`);
+        }
 
         // Fungsi untuk memulai game
         function startGame() {
             // Reset game state
             score = 0;
             lives = 3;
+            level = 1;
             scoreDisplay.textContent = score;
             livesCount.textContent = lives;
+            levelDisplay.textContent = level;
+            speedDisplay.textContent = "1x";
+            currentGameSpeed = baseGameSpeed;
+            currentObjectSpeed = baseObjectSpeed;
             gameObjects = [];
+            lastCoinTime = 0;
             
             // Bersihkan objek game yang ada
             const existingObjects = document.querySelectorAll('.game-object');
@@ -247,27 +377,48 @@
             gameOverScreen.style.display = 'none';
             gameScreen.style.display = 'flex';
             
-            // Mulai musik
-            bgm.play().catch(e => console.log("Autoplay prevented: ", e));
+            // Aktifkan audio jika belum diaktifkan
+            if (!audioEnabled) {
+                enableAudio();
+            } else {
+                // Jika audio sudah diaktifkan, langsung putar
+                bgm.play().catch(e => console.log("Error memutar audio: ", e));
+            }
             
             // Mulai game loop
             isGameRunning = true;
             gameInterval = setInterval(updateGame, 50);
-            objectInterval = setInterval(createObject, gameSpeed);
+            objectInterval = setInterval(createObject, currentGameSpeed);
         }
 
         // Fungsi untuk membuat objek (coin atau bomb)
         function createObject() {
             if (!isGameRunning) return;
             
-            const objectType = Math.random() < 0.7 ? 'coin' : 'bomb'; // 70% coin, 30% bomb
+            // Tentukan jenis objek berdasarkan level dan waktu
+            const currentTime = Date.now();
+            let objectType;
+            
+            // Pada level awal, lebih banyak coin
+            if (level < 3) {
+                objectType = Math.random() < 0.8 ? 'coin' : 'bomb'; // 80% coin, 20% bomb
+            } 
+            // Pada level menengah, seimbang
+            else if (level < 6) {
+                objectType = Math.random() < 0.65 ? 'coin' : 'bomb'; // 65% coin, 35% bomb
+            }
+            // Pada level tinggi, lebih banyak bomb
+            else {
+                objectType = Math.random() < 0.5 ? 'coin' : 'bomb'; // 50% coin, 50% bomb
+            }
+            
             const object = document.createElement('div');
             object.className = `game-object ${objectType}`;
             
-            // Atur ukuran objek
-            const size = Math.random() * 40 + 40; // 40-80px
-            object.style.width = `${size}px`;
-            object.style.height = `${size}px`;
+            // Atur ukuran objek (semakin tinggi level, semakin kecil objek)
+            const size = Math.random() * (50 - level * 2) + (40 - level); // Ukuran berkurang seiring level
+            object.style.width = `${Math.max(30, size)}px`; // Minimal 30px
+            object.style.height = `${Math.max(30, size)}px`;
             
             // Posisi acak di bagian atas layar
             const maxX = window.innerWidth - size;
@@ -277,16 +428,26 @@
             // Tambahkan animasi flip
             object.classList.add('flipping');
             
-            // Simpan data objek
+            // Simpan data objek dengan kecepatan berdasarkan level
             const objData = {
                 element: object,
                 type: objectType,
-                speed: Math.random() * 3 + 2, // Kecepatan jatuh
+                speed: (Math.random() * 2 + currentObjectSpeed), // Kecepatan jatuh dengan variasi
                 isActive: true
             };
             
             gameObjects.push(objData);
             gameScreen.appendChild(object);
+            
+            // Catat waktu pembuatan coin terakhir
+            if (objectType === 'coin') {
+                lastCoinTime = currentTime;
+            }
+            
+            // Naik level setiap 10 coin yang dikumpulkan
+            if (score > 0 && score % 10 === 0 && score / 10 >= level) {
+                increaseLevel();
+            }
         }
 
         // Fungsi untuk update posisi objek
@@ -313,6 +474,12 @@
                 } else {
                     obj.element.style.top = `${newTop}px`;
                 }
+            }
+            
+            // Naik level secara otomatis setiap 30 detik (jika belum naik level melalui coin)
+            if (Date.now() - lastCoinTime > 30000 && score > 0) {
+                increaseLevel();
+                lastCoinTime = Date.now(); // Reset timer
             }
         }
 
@@ -360,6 +527,7 @@
                         // Tambah skor untuk coin
                         score++;
                         scoreDisplay.textContent = score;
+                        lastCoinTime = Date.now(); // Update waktu coin terakhir
                     } else {
                         // Kurangi nyawa untuk bomb
                         loseLife();
@@ -386,8 +554,9 @@
             clearInterval(gameInterval);
             clearInterval(objectInterval);
             
-            // Tampilkan skor akhir
+            // Tampilkan skor akhir dan level
             finalScoreDisplay.textContent = score;
+            finalLevelDisplay.textContent = level;
             
             // Tampilkan layar game over
             gameOverScreen.style.display = 'flex';
@@ -472,6 +641,11 @@
                 };
                 img.src = src;
             });
+            
+            // Coba aktifkan audio setelah halaman dimuat
+            // Tapi hanya jika sudah ada interaksi pengguna
+            document.addEventListener('click', enableAudio, { once: true });
+            document.addEventListener('touchstart', enableAudio, { once: true });
         });
 
         // Responsif terhadap perubahan ukuran layar
